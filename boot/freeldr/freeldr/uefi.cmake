@@ -50,9 +50,12 @@ elseif(ARCH STREQUAL "amd64")
         arch/uefi/amd64/uefiasm.S)
 elseif(ARCH STREQUAL "arm")
     list(APPEND UEFILDR_ARC_SOURCE
-        arch/arm/macharm.c
-        arch/arm/debug.c)
-    #TBD
+        arch/arm/debug.c
+        arch/uefi/uefiserial.c
+        arch/uefi/arm/runtime.c)
+    list(APPEND UEFILDR_COMMON_ASM_SOURCE
+        arch/uefi/arm/uefiasm.S
+        arch/uefi/arm/entry.S)
 elseif(ARCH STREQUAL "arm64")
     list(APPEND UEFILDR_ARC_SOURCE
         arch/uefi/arm64/early_uart.c
@@ -215,7 +218,7 @@ endif()
     # We don't need hotpatching
     remove_target_compile_option(uefildr "/hotpatch")
 else()
-    if(ARCH STREQUAL "arm64" OR ARCH STREQUAL "riscv64")
+    if(ARCH STREQUAL "arm" OR ARCH STREQUAL "arm64" OR ARCH STREQUAL "riscv64")
         target_link_options(uefildr PRIVATE -Wl,--exclude-all-symbols,--file-alignment,0x200,--section-alignment,0x1000)
     else()
         target_link_options(uefildr PRIVATE -Wl,--exclude-all-symbols,--file-alignment,0x200,--section-alignment,0x200)
@@ -247,7 +250,11 @@ else()
     set_subsystem(uefildr 10)
 endif()
 
-set_entrypoint(uefildr EfiEntry)
+if(ARCH STREQUAL "arm")
+    set_entrypoint(uefildr ArmEfiEntry)
+else()
+    set_entrypoint(uefildr EfiEntry)
+endif()
 
 target_link_libraries(uefildr uefifreeldr_common cportlib blcmlib blrtl libcntpr)
 if(FREELDR_WIM_RAMDISK)
@@ -273,3 +280,31 @@ if(RUNTIME_CHECKS)
 endif()
 
 add_dependencies(uefildr xdk)
+
+if(ARCH STREQUAL "arm" AND CMAKE_C_COMPILER_ID STREQUAL "Clang")
+    find_program(ARM_UEFI_PYTHON NAMES python3 REQUIRED NO_CMAKE_FIND_ROOT_PATH)
+    add_custom_command(TARGET uefildr POST_BUILD
+        COMMAND ${ARM_UEFI_PYTHON} ${REACTOS_SOURCE_DIR}/sdk/tools/arm_uefi.py $<TARGET_FILE:uefildr>
+        VERBATIM)
+    set_property(TARGET uefildr APPEND PROPERTY LINK_DEPENDS ${REACTOS_SOURCE_DIR}/sdk/tools/arm_uefi.py)
+endif()
+
+if(ARCH STREQUAL "arm" AND CMAKE_C_COMPILER_ID STREQUAL "Clang")
+    add_library(arm_abi_layout OBJECT ${REACTOS_SOURCE_DIR}/modules/rostests/boot/arm/layout.c)
+    add_dependencies(arm_abi_layout psdk)
+    add_executable(arm_uefi_test
+        ${REACTOS_SOURCE_DIR}/modules/rostests/boot/arm/abi.c
+        ${REACTOS_SOURCE_DIR}/modules/rostests/boot/arm/registers.S
+        arch/uefi/arm/entry.S)
+    set_target_properties(arm_uefi_test PROPERTIES SUFFIX ".efi")
+    set_subsystem(arm_uefi_test efi_application)
+    set_entrypoint(arm_uefi_test ArmEfiEntry)
+    target_link_options(arm_uefi_test PRIVATE -Wl,/driver,--exclude-all-symbols,--section-alignment,0x1000)
+    target_link_libraries(arm_uefi_test setjmp libcntpr)
+    target_compile_definitions(arm_uefi_test PRIVATE UEFIBOOT)
+    add_dependencies(arm_uefi_test xdk asm arm_abi_layout)
+    add_custom_command(TARGET arm_uefi_test POST_BUILD
+        COMMAND ${ARM_UEFI_PYTHON} ${REACTOS_SOURCE_DIR}/sdk/tools/arm_uefi.py $<TARGET_FILE:arm_uefi_test>
+        VERBATIM)
+    set_property(TARGET arm_uefi_test APPEND PROPERTY LINK_DEPENDS ${REACTOS_SOURCE_DIR}/sdk/tools/arm_uefi.py)
+endif()

@@ -4,10 +4,10 @@ This file introduces LiberNT and sets the working rules and engineering criteria
 
 ## About LiberNT
 
-LiberNT is a free NT operating system. It is a fork of ReactOS with extensive changes to kernel-space components and drivers, aimed at stability and modern hardware. It focuses on 64-bit platforms, amd64, arm64 and riscv64, and targets NT10/Windows 11 compatibility. LiberNT may collaborate with ReactOS occasionally, but the code written here is written for LiberNT first: never shape a change around sending it to ReactOS.
+LiberNT is a free NT operating system. It is a fork of ReactOS with extensive changes to kernel-space components and drivers, aimed at stability and modern hardware. This fork targets ARMv7-A (32-bit ARM), initially on QEMU virt through EDK II UEFI → FreeLoader → LiberNT. It retains NT10 API compatibility where applicable; Windows 11 has no ARM32 kernel baseline. LiberNT may collaborate with ReactOS occasionally, but the code written here is written for LiberNT first: never shape a change around sending it to ReactOS.
 
-- Target architectures: amd64, i386 and arm64, with RISC-V64/PPC in progress.
-- Windows 11 is the compatibility reference.
+- Primary target: ARMv7-A (ARCH=arm), initially QEMU virt with Cortex-A15. Preserve the other ports when changing shared code.
+- Windows 11 is the reference for architecture-independent API behavior. ARM32 ABI and platform behavior use published ARM32 SDK/WDK headers, Arm specifications, UEFI/EDK II and the existing ReactOS ARM port.
 - A subdirectory can have its own `AGENTS.md`; its rules add to these for that subtree. The kernel has one for the memory manager.
 
 ### How LiberNT differs from ReactOS
@@ -39,6 +39,16 @@ Most of the tree is still shared with ReactOS, and the components synchronised w
 - When a request allows several readings, state the one you proceed on.
 - Replace legacy subsystems instead of extending them: provide every symbol in the new implementation, then drop the old files from the build. Never add hooks, flags or init calls to the code being replaced.
 
+## ARMv7 port scope
+
+- Porting work may add missing architecture hooks incrementally while retaining working implementations on other targets. The rule about replacing legacy subsystems does not require completing the entire port in one change.
+- ARM32 layouts use published ARM32 SDK/WDK definitions and Arm documentation, with existing ReactOS/LiberNT consumers as explicit scaffolding where necessary. Windows 11 ARM64 offsets are not ARM32 evidence.
+- Architecture guards are permitted where ARM32 ABI, intrinsics, pointer width or build integration require them. Prefer architecture hooks for platform behavior and keep board addresses in platform code.
+- Windows RT 8.1 may be used as a black-box ARM32 NT 6.3 reference, never as proof of NT 10 semantics. Do not assume that a board-specific recovery image boots on QEMU virt.
+- Platform, firmware and boot tests run on QEMU ARMv7. Windows 11 comparison is required only for shared API contracts that can be exercised there, not ARM32 startup, MMU or UEFI behavior.
+- Port milestones may be committed only on explicit user request and must report the actual boot stage reached. Never describe a firmware diagnostic as a running kernel.
+- Use one reusable ARM build directory and image. A dedicated ARM QEMU harness may replace vm_monitor.py if the monitor lacks ARM32 support; keep runs headless, bounded and isolated from production services.
+
 ## Sources of truth
 
 | Question | Where the answer comes from, in order |
@@ -56,7 +66,7 @@ Most of the tree is still shared with ReactOS, and the components synchronised w
 - Black-box study is the legal default. A lawful user may observe, study and test a program while running it to find the ideas and principles behind it (EU Software Directive 2009/24/EC, art. 5(3); in France, Code de la propriété intellectuelle L122-6-1 III).
 - Reading Windows binaries is decompilation and is allowed only within art. 6 of the same directive (L122-6-1 IV): by a lawful licensee, only when the information needed for interoperability is not otherwise readily available, and only for the parts needed for interoperability. Never use that information for another goal, never give it to others except for interoperability, and never use it to write a program substantially similar in its expression. The Windows licence forbids reverse engineering beyond what this law allows.
 - Never copy GPL code from Linux. Study the technique and reimplement it.
-- Never use legacy ReactOS code (the ARM3 memory manager, NT4 and NT5-era designs) as a reference.
+- Existing lawfully published ReactOS ARM code may be studied and adapted for processor mechanics under its licence, after checking the Arm and firmware specifications. It is not authority for NT 10 API contracts or internal layouts. Keep NVS as the memory manager; do not restore ARM3.
 
 ## Compatibility criteria
 
@@ -88,10 +98,10 @@ Most of the tree is still shared with ReactOS, and the components synchronised w
 - ARM64EC/CHPE code is still gated to ARM64. A later RV64EC target will reuse it, so do not treat it as ARM64-only by design, and do not generalize the gates before that work starts.
 - WoW64 means a 64-bit host running 32-bit code, independent of the host architecture. Build it for every 64-bit target, never for a list such as "amd64 or arm64". Only the x86 CPU backend is host-specific.
 - Keep debug logging architecture neutral so runs can be compared across architectures.
-- Before finishing, build amd64 and i386 as well as arm64.
+- Build and boot ARMv7 in QEMU for ARM32 changes. Build affected shared targets for other architectures when their toolchains are available; unrelated full builds do not block ARMv7 work.
 - Do not use common code for experiments or application-specific workarounds. Add special cases only when their necessity is demonstrated.
 - Board neutrality applies to common components such as the HAL, the kernel and bus drivers. A dedicated hardware driver is the right home for board knowledge; never delete a working driver as board cleanup.
-- ARM64 is weakly ordered. Express memory ordering with explicit barriers or acquire/release operations; never assume it.
+- ARMv7 and ARM64 are weakly ordered. Express memory ordering with explicit barriers or acquire/release operations; never assume it.
 
 ## Memory manager
 

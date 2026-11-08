@@ -173,84 +173,98 @@ __FuncEndLabel SETS ""
 /* Compatibility define */
 #define EQU .equ
 
-.macro IMPORT Name
-    /* Ignore */
+.syntax unified
+.thumb
+
+.macro IMPORT Name, Kind, Alias
+    .ifnb \Alias
+    .weak \Name
+    .set \Name, \Alias
+    .else
+    .extern \Name
+    .endif
 .endm
 
 .macro EXPORT Name
-    .global &Name
+    .global \Name
 .endm
 
 .macro TEXTAREA
-    .section .text, "rx"
-#if defined(_CONTROL_FLOW_GUARD)
-    .align 4
-#else
-    .align 2
-#endif
+    .text
+    .p2align 2
 .endm
 
 .macro DATAAREA
-    .section .data, "rw"
+    .data
 .endm
 
 .macro RODATAAREA
-    .section .rdata, "rw"
+    .section .rdata, "dr"
 .endm
 
-.macro NESTED_ENTRY Name
-FuncName    .equ    &Name
-PrologName  .equ    &Name&_Prolog
-FuncEndName .equ    &Name&_end
-    .global &FuncName
-    .align 2
-    .func &FuncName
-    &FuncName:
+.macro NESTED_ENTRY Name, AreaName, ExceptHandler
+    .global \Name
+    .p2align 2
+    .thumb_func
+\Name:
+    .seh_proc \Name
 .endm
 
-// FIXME: should go to kxarmunw.h
-.macro PROLOG_END
-    \PrologName:
+.macro PROLOG_END Name
+    .seh_endprologue
 .endm
 
 .macro NESTED_END Name
-    &FuncEndName:
-   .endfunc
+    .seh_endproc
 .endm
 
-.macro LEAF_ENTRY $FuncName, $AreaName
-    NESTED_ENTRY $FuncName, $AreaName
+.macro LEAF_ENTRY FuncName, AreaName
+    NESTED_ENTRY \FuncName
+    PROLOG_END
 .endm
 
-.macro LEAF_END $FuncName
-    NESTED_END $FuncName
+.macro LEAF_END FuncName
+    NESTED_END \FuncName
 .endm
 
+.macro ALTERNATE_ENTRY Name
+    .global \Name
+    .thumb_func
+\Name:
+.endm
+
+.macro mov32 Register, Value
+    movw \Register, :lower16:\Value
+    movt \Register, :upper16:\Value
+.endm
+
+.macro END
+.endm
 
 /* Some "intrinsics", see http://codemachine.com/article_armasm.html */
 
 .macro __debugbreak
-    DCD 0xDEFE
+    .short 0xDEFE
 .endm
 
 .macro __assertfail
-    DCD 0xDEFC
+    .short 0xDEFC
 .endm
 
 .macro __fastfail
-    DCD 0xDEFB
+    .short 0xDEFB
 .endm
 
 .macro __rdpmccntr64
-    DCD 0xDEFA
+    .short 0xDEFA
 .endm
 
 .macro __debugservice
-    DCD 0xDEFD
+    .short 0xDEFD
 .endm
 
 .macro __brkdiv0
-    DCD 0xDEF9
+    .short 0xDEF9
 .endm
 
 

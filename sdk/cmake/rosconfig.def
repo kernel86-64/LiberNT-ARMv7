@@ -31,6 +31,7 @@ config ARCH
     type choice
     value amd64 "x86-64"
     value i386  "IA-32 / x86"
+    value arm   "ARMv7-A (32-bit, UEFI)"
     value arm64 "AArch64"
     value riscv64 "RISC-V 64"
     value ppc   "PowerPC (little-endian NT)"

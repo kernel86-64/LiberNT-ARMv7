@@ -117,6 +117,18 @@ elseif(ARCH STREQUAL "arm")
         math/arm/__rt_srsh.s
         math/arm/__rt_udiv64.s
     )
+    if(CMAKE_C_COMPILER_ID STREQUAL "Clang")
+        list(REMOVE_ITEM MSVCRTEX_SOURCE
+            math/arm/__rt_sdiv.c
+            math/arm/__rt_sdiv64_worker.c
+            math/arm/__rt_udiv.c
+            math/arm/__rt_udiv64_worker.c)
+        list(REMOVE_ITEM MSVCRTEX_ASM_SOURCE
+            except/arm/chkstk_asm.s
+            math/arm/__rt_sdiv64.s
+            math/arm/__rt_udiv64.s)
+    endif()
+
 endif()
 
 set_source_files_properties(${MSVCRTEX_ASM_SOURCE} PROPERTIES COMPILE_DEFINITIONS "_DLL;_MSVCRTEX_")

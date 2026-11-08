@@ -20,7 +20,7 @@
 #include <freeldr.h>
 #include <debug.h>
 
-#if defined(UEFIBOOT) && (defined(_M_ARM64) || defined(_M_RISCV64))
+#if defined(UEFIBOOT) && (defined(_M_ARM) || defined(_M_ARM64) || defined(_M_RISCV64))
 #if defined(_M_ARM64)
 #include <reactos/arm64/early_uart.h>
 #endif
@@ -66,7 +66,7 @@ static CHAR DebugLastError[256];
 static CHAR DebugErrorLines[8][192];
 static ULONG DebugErrorLineCount;
 
-#if defined(UEFIBOOT) && (defined(_M_ARM64) || defined(_M_RISCV64))
+#if defined(UEFIBOOT) && (defined(_M_ARM) || defined(_M_ARM64) || defined(_M_RISCV64))
 static VOID
 DebugUefiSerialPutChar(
     _In_ UCHAR Character)
@@ -211,7 +211,7 @@ DebugInit(
 Done:
     Initialized = TRUE;
 
-#if defined(UEFIBOOT) && (defined(_M_ARM64) || defined(_M_RISCV64))
+#if defined(UEFIBOOT) && (defined(_M_ARM) || defined(_M_ARM64) || defined(_M_RISCV64))
     UefiSerialInitialize();
 #if defined(_M_ARM64)
     EarlyUartInitialize(0);
@@ -240,7 +240,7 @@ VOID DebugPrintChar(UCHAR Character)
 #endif
     if (DebugPort & RS232)
     {
-#if defined(UEFIBOOT) && (defined(_M_ARM64) || defined(_M_RISCV64))
+#if defined(UEFIBOOT) && (defined(_M_ARM) || defined(_M_ARM64) || defined(_M_RISCV64))
         if (Character == '\n')
             DebugUefiSerialPutChar('\r');
 

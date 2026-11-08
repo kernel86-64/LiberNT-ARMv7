@@ -34,4 +34,14 @@ FrLdrBugCheckWithMessage(
     PCSTR Format,
     ...)
 {
+    va_list Arguments;
+    CHAR Message[512];
+
+    va_start(Arguments, Format);
+    RtlStringCbVPrintfA(Message, sizeof(Message), Format, Arguments);
+    va_end(Arguments);
+    DbgPrint("FreeLoader bugcheck %lu at %s:%lu: %s\n", BugCode, File, Line, Message);
+    __asm__ __volatile__("cpsid i" ::: "memory");
+    for (;;)
+        __asm__ __volatile__("wfi" ::: "memory");
 }

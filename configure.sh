@@ -69,7 +69,7 @@ usage() {
 	echo "Usage: configure.sh [options]"
 	echo "  --clang              Use RosBE Clang/LLVM from ~/.local/opt/rosbe/llvm"
 	echo "  --gcc                Use GCC from ~/.local/opt/rosbe/mingw-gcc"
-	echo "  -a, --arch <arch>    Target architecture: amd64, i386, arm64, riscv64, ppc (default: amd64)"
+	echo "  -a, --arch <arch>    Target architecture: arm, amd64, i386, arm64, riscv64, ppc (default: amd64)"
 	echo "  -r, --release        Configure a Release build (default: Debug)"
 	echo "  makefiles            Use Unix Makefiles generator (default: Ninja)"
 	echo "  menuconfig           Open the interactive configuration UI first;"

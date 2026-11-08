@@ -298,8 +298,7 @@ Enable this if the module uses typeid or dynamic_cast. You will probably need to
         add_definitions(-D_AMD64_ -D__x86_64__ -D_WIN64)
         set(ARCH_64BIT TRUE)
     elseif(ARCH STREQUAL "arm")
-        # _M_ARM is already defined by toolchain
-        add_definitions(-D_ARM_ -D__arm__ -DWIN32)
+        add_compile_definitions(_M_ARM=7 _ARM_ __arm__ WIN32)
         if(SARCH STREQUAL "omap3-zoom2")
             add_definitions(-D_ZOOM2_)
         endif()

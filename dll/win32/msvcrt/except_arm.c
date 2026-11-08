@@ -65,7 +65,7 @@ void *call_catch_handler( EXCEPTION_RECORD *rec )
 /*******************************************************************
  *		call_unwind_handler
  */
-void *call_unwind_handler( void *handler, ULONG_PTR frame, DISPATCHER_CONTEXT *dispatch )
+void *call_unwind_handler( void *handler, uintptr_t frame, DISPATCHER_CONTEXT *dispatch )
 {
     TRACE( "calling %p frame %Ix\n", handler, frame );
     return call_exc_handler( handler, frame, 0x100, dispatch->NonVolatileRegisters );

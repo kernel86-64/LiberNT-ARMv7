@@ -7,9 +7,9 @@ elseif(ARCH STREQUAL "amd64")
     set(SARCH "" CACHE STRING
     "Sub-architecture to build for.")
 elseif(ARCH STREQUAL "arm")
-    set(SARCH "omap3-zoom2" CACHE STRING
+    set(SARCH "virt" CACHE STRING
     "Sub-architecture (board) to build for. Specify one of:
-     kurobox versatile omap3-zoom2 omap3-beagle")
+     virt kurobox versatile omap3-zoom2 omap3-beagle")
 elseif(ARCH STREQUAL "arm64")
     # By design, arm64 kernels and OSes should be intercompatible, but
     # due to SoC vendors seemingly not being able to follow ARM design guidelines
@@ -57,7 +57,13 @@ elseif(ARCH STREQUAL "arm64" OR ARCH STREQUAL "riscv64")
     "Which CPU ReactOS should be optimized for.")
 endif()
 
-set(OPTIMIZE "4" CACHE STRING
+if(ARCH STREQUAL "arm")
+    set(_default_optimize "0")
+else()
+    set(_default_optimize "4")
+endif()
+
+set(OPTIMIZE "${_default_optimize}" CACHE STRING
 "What level of optimization to use.
  0 = Off
  1 = Optimize for size (-Os) with some additional options

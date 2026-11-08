@@ -18,7 +18,7 @@
 #define LARGE_PFN_SHIFT             20
 
 #define PTE_BASE                    0xC0000000
-#define PDE_BASE                    0xC0400000
+#define ARM_LOADER_PDE_BASE         0xC0400000
 #define PDR_BASE                    0xFFD00000
 #define VECTOR_BASE                 0xFFFF0000
 
@@ -34,7 +34,7 @@
 #define MmioPageTableIndex          (MMIO_BASE >> PDE_SHIFT)
 #define KernelPageTableIndex        (KSEG0_BASE >> PDE_SHIFT)
 #define StartupPtePageTableIndex    (PTE_BASE >> PDE_SHIFT)
-#define StartupPdePageTableIndex    (PDE_BASE >> PDE_SHIFT)
+#define StartupPdePageTableIndex    (ARM_LOADER_PDE_BASE >> PDE_SHIFT)
 #define PdrPageTableIndex           (PDR_BASE >> PDE_SHIFT)
 #define VectorPageTableIndex        (VECTOR_BASE >> PDE_SHIFT)
 
@@ -163,13 +163,23 @@ WinLdrMapSpecialPages(ULONG PcrBasePage)
     return TRUE;
 }
 
+static BOOLEAN MempAllocatePageTables(VOID);
+
 VOID
 WinLdrSetupForNt(IN PLOADER_PARAMETER_BLOCK LoaderBlock,
                  IN PVOID *GdtIdt,
                  IN PULONG PcrBasePage,
                  IN PULONG TssBasePage)
 {
-    PKPDR_PAGE PdrPage = (PVOID)0xFFD00000;
+    PKPDR_PAGE KernelPdr;
+
+    if (!MempAllocatePageTables() || !WinLdrMapSpecialPages(0))
+        BugCheck("Unable to prepare ARM page tables");
+
+    *GdtIdt = NULL;
+    *PcrBasePage = 0;
+    *TssBasePage = 0;
+    KernelPdr = (PVOID)0xFFD00000;
 
     /* Load cache information */
     LoaderBlock->u.Arm.FirstLevelDcacheSize = FirstLevelDcacheSize;
@@ -182,15 +192,15 @@ WinLdrSetupForNt(IN PLOADER_PARAMETER_BLOCK LoaderBlock,
     LoaderBlock->u.Arm.SecondLevelIcacheFillSize = SecondLevelIcacheSize;
 
     /* Write initial context information */
-    LoaderBlock->KernelStack = (ULONG_PTR)PdrPage->KernelStack;
+    LoaderBlock->KernelStack = (ULONG_PTR)KernelPdr->KernelStack;
     LoaderBlock->KernelStack += KERNEL_STACK_SIZE;
-    LoaderBlock->u.Arm.PanicStack = (ULONG_PTR)PdrPage->PanicStack;
+    LoaderBlock->u.Arm.PanicStack = (ULONG_PTR)KernelPdr->PanicStack;
     LoaderBlock->u.Arm.PanicStack += KERNEL_STACK_SIZE;
-    LoaderBlock->u.Arm.InterruptStack = (ULONG_PTR)PdrPage->InterruptStack;
+    LoaderBlock->u.Arm.InterruptStack = (ULONG_PTR)KernelPdr->InterruptStack;
     LoaderBlock->u.Arm.InterruptStack += KERNEL_STACK_SIZE;
-    LoaderBlock->Prcb = (ULONG_PTR)PdrPage->Prcb;
-    LoaderBlock->Process = (ULONG_PTR)PdrPage->InitialProcess;
-    LoaderBlock->Thread = (ULONG_PTR)PdrPage->InitialThread;
+    LoaderBlock->Prcb = (ULONG_PTR)KernelPdr->Prcb;
+    LoaderBlock->Process = (ULONG_PTR)KernelPdr->InitialProcess;
+    LoaderBlock->Thread = (ULONG_PTR)KernelPdr->InitialThread;
 }
 
 static
@@ -210,6 +220,9 @@ MempAllocatePageTables(VOID)
     PdrPage = MmAllocateMemoryAtAddress(sizeof(KPDR_PAGE),
                                         MempPdrBaseAddress,
                                         LoaderMemoryData);
+    if (PdrPage == NULL)
+        return FALSE;
+    RtlZeroMemory(PdrPage, sizeof(*PdrPage));
 
     /* Setup the Low Memory PDE as an identity-mapped Large Page (1MB) */
     LargePte = &PdrPage->PageDir.Pte[LowMemPageTableIndex];

@@ -32,6 +32,12 @@
 
 #include <setjmp.h>
 
+#if defined(_M_ARM) && defined(__clang__)
+#undef setjmp
+#define setjmp(BUF) _setjmpex((BUF), __builtin_sponentry())
+#define setjmpex(BUF) _setjmpex((BUF), __builtin_sponentry())
+#endif
+
 #if (defined(_X86_) && !defined(__x86_64))
 /* jmp_buf and the CRT declaration macros must be defined first. Keep this
  * declaration even when setjmp.h was included before setjmpex.h. */

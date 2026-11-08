@@ -260,7 +260,7 @@ typedef struct __JUMP_BUFFER {
 #endif
 
 #if _VCRT_CLANG_INTRINSICS && ((_VCRT_GNU_AMD64_CODEGEN && defined(USE_MINGW_SETJMP_TWO_ARGS)) || \
-                               _VCRT_ARM64_CODEGEN)
+                               _VCRT_ARM64_CODEGEN || defined(_M_ARM))
   /* Clang treats _setjmp as a 1-arg builtin on Win64. Route declarations and
    * macro expansion through the intrinsic aliases exported by the CRT. */
 #define _setjmp __intrinsic_setjmp
@@ -284,6 +284,16 @@ typedef struct __JUMP_BUFFER {
 #define setjmpex(BUF) _setjmpex((BUF),mingw_getsp())
   int __MINGW_NOTHROW __cdecl _setjmpex(jmp_buf _Buf,void *_Ctx);
 #endif /* _INC_SETJMPEX */
+#elif defined(_M_ARM) && defined(__clang__)
+  int __MINGW_NOTHROW __cdecl _setjmp(jmp_buf _Buf, void *_Frame) __attribute__((returns_twice));
+  int __MINGW_NOTHROW __cdecl _setjmpex(jmp_buf _Buf, void *_Frame) __attribute__((returns_twice));
+#ifndef _INC_SETJMPEX
+#define setjmp(BUF) _setjmp((BUF), __builtin_sponentry())
+#else
+#undef setjmp
+#define setjmp(BUF) _setjmpex((BUF), __builtin_sponentry())
+#define setjmpex(BUF) _setjmpex((BUF), __builtin_sponentry())
+#endif
 #elif _VCRT_ARM64_CODEGEN && (defined(__clang__) || defined(__GNUC__))
 /* longjmp unwinds to the frame recorded here, so it must be the stack pointer
  * on entry to the caller - the establisher frame the unwinder reports. */

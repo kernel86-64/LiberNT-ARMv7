@@ -2154,6 +2154,7 @@ typedef struct _CONTEXT {
 #define CONTEXT_FLOATING_POINT  (CONTEXT_ARM | 0x00000004L)
 #define CONTEXT_DEBUG_REGISTERS (CONTEXT_ARM | 0x00000008L)
 #define CONTEXT_FULL            (CONTEXT_CONTROL | CONTEXT_INTEGER | CONTEXT_FLOATING_POINT)
+#define CONTEXT_ALL             (CONTEXT_FULL | CONTEXT_DEBUG_REGISTERS)
 
 #define EXCEPTION_READ_FAULT    0
 #define EXCEPTION_WRITE_FAULT   1
@@ -2251,6 +2252,99 @@ typedef IMAGE_ARM_RUNTIME_FUNCTION_ENTRY RUNTIME_FUNCTION, *PRUNTIME_FUNCTION;
 
 typedef SCOPE_TABLE_ARM SCOPE_TABLE, *PSCOPE_TABLE;
 
+#define UNW_FLAG_NHANDLER 0x0
+#define UNW_FLAG_EHANDLER 0x1
+#define UNW_FLAG_UHANDLER 0x2
+
+#ifndef UNWIND_HISTORY_TABLE_SIZE
+#define UNWIND_HISTORY_TABLE_SIZE 12
+
+typedef struct _UNWIND_HISTORY_TABLE_ENTRY {
+    ULONG_PTR ImageBase;
+    PRUNTIME_FUNCTION FunctionEntry;
+} UNWIND_HISTORY_TABLE_ENTRY, *PUNWIND_HISTORY_TABLE_ENTRY;
+
+typedef struct _UNWIND_HISTORY_TABLE {
+    ULONG Count;
+    UCHAR LocalHint;
+    UCHAR GlobalHint;
+    UCHAR Search;
+    UCHAR Once;
+    ULONG_PTR LowAddress;
+    ULONG_PTR HighAddress;
+    UNWIND_HISTORY_TABLE_ENTRY Entry[UNWIND_HISTORY_TABLE_SIZE];
+} UNWIND_HISTORY_TABLE, *PUNWIND_HISTORY_TABLE;
+#endif
+
+
+typedef struct _KNONVOLATILE_CONTEXT_POINTERS {
+
+    PDWORD R4;
+    PDWORD R5;
+    PDWORD R6;
+    PDWORD R7;
+    PDWORD R8;
+    PDWORD R9;
+    PDWORD R10;
+    PDWORD R11;
+    PDWORD Lr;
+
+    PULONGLONG D8;
+    PULONGLONG D9;
+    PULONGLONG D10;
+    PULONGLONG D11;
+    PULONGLONG D12;
+    PULONGLONG D13;
+    PULONGLONG D14;
+    PULONGLONG D15;
+
+} KNONVOLATILE_CONTEXT_POINTERS, *PKNONVOLATILE_CONTEXT_POINTERS;
+#define KNONVOLATILE_CONTEXT_POINTERS_DEFINED
+
+NTSYSAPI
+PRUNTIME_FUNCTION
+NTAPI
+RtlLookupFunctionEntry(
+    _In_ ULONG_PTR ControlPc,
+    _Out_ PULONG ImageBase,
+    _Inout_opt_ PUNWIND_HISTORY_TABLE HistoryTable
+    );
+
+NTSYSAPI
+VOID
+__cdecl
+RtlRestoreContext(
+    _In_ PCONTEXT ContextRecord,
+    _In_opt_ struct _EXCEPTION_RECORD* ExceptionRecord
+    );
+
+NTSYSAPI
+VOID
+NTAPI
+RtlUnwindEx(
+    _In_opt_ PVOID TargetFrame,
+    _In_opt_ PVOID TargetIp,
+    _In_opt_ struct _EXCEPTION_RECORD *ExceptionRecord,
+    _In_ PVOID ReturnValue,
+    _In_ PCONTEXT ContextRecord,
+    _In_opt_ PUNWIND_HISTORY_TABLE HistoryTable
+    );
+
+NTSYSAPI
+PEXCEPTION_ROUTINE
+NTAPI
+RtlVirtualUnwind(
+    _In_ ULONG HandlerType,
+    _In_ ULONG ImageBase,
+    _In_ ULONG ControlPc,
+    _In_ PRUNTIME_FUNCTION FunctionEntry,
+    _Inout_ PCONTEXT ContextRecord,
+    _Out_ PVOID* HandlerData,
+    _Out_ PULONG EstablisherFrame,
+    _Inout_opt_ PKNONVOLATILE_CONTEXT_POINTERS ContextPointers
+    );
+
+
 typedef struct _DISPATCHER_CONTEXT
 {
     DWORD ControlPc;
@@ -2267,6 +2361,10 @@ typedef struct _DISPATCHER_CONTEXT
     PBYTE  NonVolatileRegisters;
     DWORD Reserved;
 } DISPATCHER_CONTEXT, *PDISPATCHER_CONTEXT;
+
+struct _EXCEPTION_POINTERS;
+typedef LONG (*PEXCEPTION_FILTER)(struct _EXCEPTION_POINTERS *ExceptionPointers, DWORD EstablisherFrame);
+typedef VOID (*PTERMINATION_HANDLER)(BOOLEAN AbnormalTermination, DWORD EstablisherFrame);
 
 #elif defined(_ARM64_)
 

@@ -5,7 +5,34 @@
 #define SYSCALLS_ARM64_STUBS 0
 #endif
 
-#ifdef _M_ARM
+#if defined(_M_ARM) && !defined(_MSC_VER)
+
+#include <ksarm.h>
+
+#define SYSCALLS_GNU_AS_STUBS
+
+    .set SyscallId, 0
+
+    .macro STUB_U Name, ArgCount=0
+    LEAF_ENTRY Nt\Name
+    ALTERNATE_ENTRY Zw\Name
+    movw r12, #SyscallId
+    svc #1
+    bx lr
+    LEAF_END Nt\Name
+    .set SyscallId, SyscallId + 1
+    .endm
+
+    .macro STUB_K Name, ArgCount=0
+    LEAF_ENTRY Zw\Name
+    movw r12, #SyscallId
+    svc #1
+    bx lr
+    LEAF_END Zw\Name
+    .set SyscallId, SyscallId + 1
+    .endm
+
+#elif defined(_M_ARM)
 
 #include <ksarm.h>
 

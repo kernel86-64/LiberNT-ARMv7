@@ -1,0 +1,7 @@
+config PROFILE_ARM
+    prompt "Target profile"
+    type choice
+    var ROSCONFIG_PROFILE
+    value generic "QEMU virt (ARMv7 UEFI)"
+    default generic
+    depends ARCH=arm

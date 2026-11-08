@@ -10,27 +10,20 @@
     TEXTAREA
 
     LEAF_ENTRY __longjmp_noframe
-
-    ldmia r0!, {r1,r4-r11}
-    ldmia r0!, {r1,lr,fp}
-    mov sp, r1
-
-    /* Load NEON registers */
-    vld1.64 {d0}, [r0]!
-    vld1.64 {d1}, [r0]!
-    vld1.64 {d2}, [r0]!
-    vld1.64 {d3}, [r0]!
-    vld1.64 {d4}, [r0]!
-    vld1.64 {d5}, [r0]!
-    vld1.64 {d6}, [r0]!
-    vld1.64 {d7}, [r0]!
-
-    /* Return 1 */
-    mov r0, #1
+    mov r2, r0
+    mov r0, r1
+    cmp r0, #0
+    it eq
+    moveq r0, #1
+    adds r2, #4
+    ldmia r2!, {r4-r11}
+    ldr r3, [r2], #4
+    mov sp, r3
+    ldr lr, [r2], #4
+    ldr r3, [r2], #4
+    vmsr fpscr, r3
+    vldmia r2, {d8-d15}
     bx lr
-
     LEAF_END __longjmp_noframe
 
     END
-
-/* EOF */

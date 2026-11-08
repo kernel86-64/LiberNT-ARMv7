@@ -207,12 +207,10 @@ elseif(ARCH STREQUAL "amd64")
     )
 elseif(ARCH STREQUAL "arm")
     list(APPEND LIBCNTPR_MATH_SOURCE
-        math/cos.c
         math/ceilf.c
         math/fabs.c
         math/fabsf.c
         math/floorf.c
-        math/sin.c
         math/sqrt.c
         math/sqrtf.c
         math/arm/__rt_sdiv.c
@@ -251,22 +249,33 @@ elseif(ARCH STREQUAL "arm")
         math/tanf.c
         math/tanhf.c
     )
-    list(APPEND LIBCNTPR_MATH_ASM_SOURCE
-        math/arm/atan.s
-        math/arm/atan2.s
-        math/arm/ceil.s
-        math/arm/exp.s
-        math/arm/fmod.s
-        math/arm/floor.s
-        math/arm/ldexp.s
-        math/arm/log.s
-        math/arm/log10.s
-        math/arm/pow.s
-        math/arm/tan.s
-        math/arm/__rt_sdiv64.s
-        math/arm/__rt_srsh.s
-        math/arm/__rt_udiv64.s
-    )
+    list(APPEND LIBCNTPR_MATH_SOURCE
+        math/atan.c
+        math/libm_sse2/atan2.c
+        math/libm_sse2/_handle_error.c
+        math/arm/_set_statfp.c
+        math/ceil.c
+        math/exp.c
+        math/fmod.c
+        math/floor.c
+        math/ldexp.c
+        math/log.c
+        math/log10.c
+        math/pow.c
+        math/trig.c
+        math/libm_sse2/remainder_piby2.c)
+    list(APPEND LIBCNTPR_MATH_ASM_SOURCE math/arm/__rt_srsh.s)
+    if(CMAKE_C_COMPILER_ID STREQUAL "Clang")
+        list(REMOVE_ITEM LIBCNTPR_MATH_SOURCE
+            math/arm/__rt_sdiv.c
+            math/arm/__rt_sdiv64_worker.c
+            math/arm/__rt_udiv.c
+            math/arm/__rt_udiv64_worker.c)
+    else()
+        list(APPEND LIBCNTPR_MATH_ASM_SOURCE
+            math/arm/__rt_sdiv64.s
+            math/arm/__rt_udiv64.s)
+    endif()
     list(APPEND CRT_MATH_ASM_SOURCE
         math/arm/_logb.s
     )

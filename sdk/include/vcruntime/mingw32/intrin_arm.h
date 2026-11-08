@@ -35,36 +35,51 @@
 #define _ReturnAddress() (__builtin_return_address(0))
 #define _ReadWriteBarrier() __sync_synchronize()
 
+#if !HAS_BUILTIN(__yield)
 __INTRIN_INLINE void __yield(void) { __asm__ __volatile__("yield"); }
+#endif
 
+#if !HAS_BUILTIN(__break)
 __INTRIN_INLINE void __break(unsigned int value) { __asm__ __volatile__("bkpt %0": : "M" (value)); }
+#endif
 
+#if !HAS_BUILTIN(_byteswap_ushort)
 __INTRIN_INLINE unsigned short _byteswap_ushort(unsigned short value)
 {
 	return (value >> 8) | (value << 8);
 }
+#endif
 
-__INTRIN_INLINE unsigned _CountLeadingZeros(long Mask)
+#if !HAS_BUILTIN(_CountLeadingZeros)
+__INTRIN_INLINE unsigned _CountLeadingZeros(unsigned long Mask)
 {
     return Mask ? __builtin_clz(Mask) : 32;
 }
+#endif
 
-__INTRIN_INLINE unsigned _CountTrailingZeros(long Mask)
+#if !HAS_BUILTIN(_CountTrailingZeros)
+__INTRIN_INLINE unsigned _CountTrailingZeros(unsigned long Mask)
 {
     return Mask ? __builtin_ctz(Mask) : 32;
 }
+#endif
 
+#if !HAS_BUILTIN(_BitScanForward)
 __INTRIN_INLINE unsigned char _BitScanForward(unsigned long * const Index, const unsigned long Mask)
 {
 	*Index = __builtin_ctz(Mask);
 	return Mask ? 1 : 0;
 }
+#endif
 
+#if !HAS_BUILTIN(_InterlockedCompareExchange8)
 __INTRIN_INLINE char _InterlockedCompareExchange8(volatile char * const Destination, const char Exchange, const char Comperand)
 {
 	return __sync_val_compare_and_swap(Destination, Comperand, Exchange);
 }
+#endif
 
+#if !HAS_BUILTIN(_InterlockedCompareExchange16)
 __INTRIN_INLINE short _InterlockedCompareExchange16(volatile short * const Destination, const short Exchange, const short Comperand)
 {
 	short a, b;
@@ -84,7 +99,9 @@ __INTRIN_INLINE short _InterlockedCompareExchange16(volatile short * const Desti
 
 	return a;
 }
+#endif
 
+#if !HAS_BUILTIN(_InterlockedExchangeAdd16)
 __INTRIN_INLINE short _InterlockedExchangeAdd16(volatile short * const Addend, const short Value)
 {
 	short a, b, c;
@@ -102,7 +119,9 @@ __INTRIN_INLINE short _InterlockedExchangeAdd16(volatile short * const Addend, c
 
 	return a;
 }
+#endif
 
+#if !HAS_BUILTIN(_InterlockedCompareExchange)
 __INTRIN_INLINE long _InterlockedCompareExchange(volatile long * const dest, const long exch, const long comp)
 {
 	long a, b;
@@ -122,7 +141,9 @@ __INTRIN_INLINE long _InterlockedCompareExchange(volatile long * const dest, con
 
 	return a;
 }
+#endif
 
+#if !HAS_BUILTIN(_InterlockedCompareExchange64)
 __INTRIN_INLINE long long _InterlockedCompareExchange64(volatile long long * const dest, const long long exch, const long long comp)
 {
     //
@@ -133,13 +154,17 @@ __INTRIN_INLINE long long _InterlockedCompareExchange64(volatile long long * con
     if (*dest == comp) *dest = exch;
     return result;
 }
+#endif
 
+#if !HAS_BUILTIN(_InterlockedCompareExchangePointer)
 __INTRIN_INLINE void * _InterlockedCompareExchangePointer(void * volatile * const Destination, void * const Exchange, void * const Comperand)
 {
     return (void*)_InterlockedCompareExchange((volatile long* const)Destination, (const long)Exchange, (const long)Comperand);
 }
+#endif
 
 
+#if !HAS_BUILTIN(_InterlockedExchangeAdd)
 __INTRIN_INLINE long _InterlockedExchangeAdd(volatile long * const dest, const long add)
 {
 	long a, b, c;
@@ -157,7 +182,9 @@ __INTRIN_INLINE long _InterlockedExchangeAdd(volatile long * const dest, const l
 
 	return a;
 }
+#endif
 
+#if !HAS_BUILTIN(_InterlockedExchange)
 __INTRIN_INLINE long _InterlockedExchange(volatile long * const dest, const long exch)
 {
 	long a;
@@ -168,21 +195,27 @@ __INTRIN_INLINE long _InterlockedExchange(volatile long * const dest, const long
 
 	return a;
 }
+#endif
 
 
+#if !HAS_BUILTIN(_InterlockedExchangePointer)
 __INTRIN_INLINE void * _InterlockedExchangePointer(void * volatile * const Target, void * const Value)
 {
     return (void *)_InterlockedExchange((volatile long * const)Target, (const long)Value);
 }
+#endif
 
 
 
+#if !HAS_BUILTIN(_BitScanReverse)
 __INTRIN_INLINE unsigned char _BitScanReverse(unsigned long * const Index, const unsigned long Mask)
 {
     *Index = 31 - __builtin_clz(Mask);
 	return Mask ? 1 : 0;
 }
+#endif
 
+#if !HAS_BUILTIN(_InterlockedAnd8)
 __INTRIN_INLINE char _InterlockedAnd8(volatile char * const value, const char mask)
 {
 	char x;
@@ -199,7 +232,9 @@ __INTRIN_INLINE char _InterlockedAnd8(volatile char * const value, const char ma
 
 	return y;
 }
+#endif
 
+#if !HAS_BUILTIN(_InterlockedAnd16)
 __INTRIN_INLINE short _InterlockedAnd16(volatile short * const value, const short mask)
 {
 	short x;
@@ -216,7 +251,9 @@ __INTRIN_INLINE short _InterlockedAnd16(volatile short * const value, const shor
 
 	return y;
 }
+#endif
 
+#if !HAS_BUILTIN(_InterlockedAnd)
 __INTRIN_INLINE long _InterlockedAnd(volatile long * const value, const long mask)
 {
 	long x;
@@ -233,7 +270,9 @@ __INTRIN_INLINE long _InterlockedAnd(volatile long * const value, const long mas
 
 	return y;
 }
+#endif
 
+#if !HAS_BUILTIN(_InterlockedOr8)
 __INTRIN_INLINE char _InterlockedOr8(volatile char * const value, const char mask)
 {
 	char x;
@@ -250,7 +289,9 @@ __INTRIN_INLINE char _InterlockedOr8(volatile char * const value, const char mas
 
 	return y;
 }
+#endif
 
+#if !HAS_BUILTIN(_InterlockedOr16)
 __INTRIN_INLINE short _InterlockedOr16(volatile short * const value, const short mask)
 {
 	short x;
@@ -267,7 +308,9 @@ __INTRIN_INLINE short _InterlockedOr16(volatile short * const value, const short
 
 	return y;
 }
+#endif
 
+#if !HAS_BUILTIN(_InterlockedOr)
 __INTRIN_INLINE long _InterlockedOr(volatile long * const value, const long mask)
 {
 	long x;
@@ -284,7 +327,9 @@ __INTRIN_INLINE long _InterlockedOr(volatile long * const value, const long mask
 
 	return y;
 }
+#endif
 
+#if !HAS_BUILTIN(_InterlockedXor8)
 __INTRIN_INLINE char _InterlockedXor8(volatile char * const value, const char mask)
 {
 	char x;
@@ -301,7 +346,9 @@ __INTRIN_INLINE char _InterlockedXor8(volatile char * const value, const char ma
 
 	return y;
 }
+#endif
 
+#if !HAS_BUILTIN(_InterlockedXor16)
 __INTRIN_INLINE short _InterlockedXor16(volatile short * const value, const short mask)
 {
 	short x;
@@ -318,7 +365,9 @@ __INTRIN_INLINE short _InterlockedXor16(volatile short * const value, const shor
 
 	return y;
 }
+#endif
 
+#if !HAS_BUILTIN(_InterlockedXor)
 __INTRIN_INLINE long _InterlockedXor(volatile long * const value, const long mask)
 {
 	long x;
@@ -335,33 +384,59 @@ __INTRIN_INLINE long _InterlockedXor(volatile long * const value, const long mas
 
 	return y;
 }
+#endif
 
+#if !HAS_BUILTIN(_InterlockedAdd)
+__INTRIN_INLINE long _InterlockedAdd(volatile long *Addend, long Value)
+{
+    return __atomic_add_fetch(Addend, Value, __ATOMIC_SEQ_CST);
+}
+#endif
+
+#if !HAS_BUILTIN(_InterlockedAdd64)
+__INTRIN_INLINE long long _InterlockedAdd64(volatile long long *Addend, long long Value)
+{
+    return __atomic_add_fetch(Addend, Value, __ATOMIC_SEQ_CST);
+}
+#endif
+
+#if !HAS_BUILTIN(_InterlockedDecrement)
 __INTRIN_INLINE long _InterlockedDecrement(volatile long * const lpAddend)
 {
 	return _InterlockedExchangeAdd(lpAddend, -1) - 1;
 }
+#endif
 
+#if !HAS_BUILTIN(_InterlockedIncrement)
 __INTRIN_INLINE long _InterlockedIncrement(volatile long * const lpAddend)
 {
 	return _InterlockedExchangeAdd(lpAddend, 1) + 1;
 }
+#endif
 
-__INTRIN_INLINE long _InterlockedDecrement16(volatile short * const lpAddend)
+#if !HAS_BUILTIN(_InterlockedDecrement16)
+__INTRIN_INLINE short _InterlockedDecrement16(volatile short * const lpAddend)
 {
 	return _InterlockedExchangeAdd16(lpAddend, -1) - 1;
 }
+#endif
 
-__INTRIN_INLINE long _InterlockedIncrement16(volatile short * const lpAddend)
+#if !HAS_BUILTIN(_InterlockedIncrement16)
+__INTRIN_INLINE short _InterlockedIncrement16(volatile short * const lpAddend)
 {
 	return _InterlockedExchangeAdd16(lpAddend, 1) + 1;
 }
+#endif
 
+#if !HAS_BUILTIN(_InterlockedAddLargeStatistic)
 __INTRIN_INLINE long _InterlockedAddLargeStatistic(volatile long long * const Addend, const long Value)
 {
     *Addend += Value;
     return Value;
 }
+#endif
 
+#if !HAS_BUILTIN(_disable)
 __INTRIN_INLINE void _disable(void)
 {
     __asm__ __volatile__
@@ -369,7 +444,9 @@ __INTRIN_INLINE void _disable(void)
      "cpsid i    @ __cli" : : : "memory", "cc"
     );
 }
+#endif
 
+#if !HAS_BUILTIN(_enable)
 __INTRIN_INLINE void _enable(void)
 {
     __asm__ __volatile__
@@ -377,22 +454,29 @@ __INTRIN_INLINE void _enable(void)
      "cpsie i    @ __sti" : : : "memory", "cc"
     );
 }
+#endif
 
+#if !HAS_BUILTIN(_interlockedbittestandset)
 __INTRIN_INLINE unsigned char _interlockedbittestandset(volatile long * a, const long b)
 {
 	return (_InterlockedOr(a, 1 << b) >> b) & 1;
 }
+#endif
 
+#if !HAS_BUILTIN(_interlockedbittestandreset)
 __INTRIN_INLINE unsigned char _interlockedbittestandreset(volatile long * a, const long b)
 {
 	return (_InterlockedAnd(a, ~(1 << b)) >> b) & 1;
 }
+#endif
 
 #ifndef __MSVCRT__
+#if !HAS_BUILTIN(_rotl)
 __INTRIN_INLINE unsigned int _rotl(const unsigned int value, int shift)
 {
 	return (((value) << ((int)(shift))) | ((value) >> (32 - (int)(shift))));
 }
+#endif
 #endif
 
 #define _clz(a) \

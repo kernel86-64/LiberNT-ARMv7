@@ -31,7 +31,7 @@ MachInit(const char *CmdLine)
 {
     RtlZeroMemory(&MachVtbl, sizeof(MachVtbl));
 
-#if defined(_M_ARM64) || defined(_M_RISCV64)
+#if defined(_M_ARM) || defined(_M_ARM64) || defined(_M_RISCV64)
     UefiSerialInitialize();
 #endif
 #if defined(_M_ARM64)

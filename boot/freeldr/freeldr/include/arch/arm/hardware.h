@@ -30,7 +30,11 @@ extern ULONG SecondLevelIcacheSize;
 extern ULONG SecondLevelIcacheFillSize;
 
 extern ULONG gDiskReadBuffer, gFileSysBuffer;
+#ifndef UEFIBOOT
 #define DiskReadBuffer ((PVOID)gDiskReadBuffer)
+#else
+extern PVOID DiskReadBuffer;
+#endif
 
 #define DriveMapGetBiosDriveNumber(DeviceName) 0
 
@@ -60,3 +64,6 @@ typedef enum _ARM_DOMAIN
 } ARM_DOMAIN;
 
 #define PDE_SHIFT 20
+
+DECLSPEC_NORETURN VOID __cdecl Reboot(VOID);
+VOID StallExecutionProcessor(ULONG Microseconds);

@@ -4,6 +4,11 @@
 #ifdef _M_ARM
 
     TEXTAREA
+#ifdef SYSCALLS_GNU_AS_STUBS
+    .set SyscallId, 0x1000
+#else
+SyscallId SETA 0x1000
+#endif
 
 #define SVC_(name, argcount) STUB_U name
 
