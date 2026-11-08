@@ -3271,7 +3271,7 @@ QSI_DEF(SystemLogicalProcessorInformation)
         /* If current processor is active and is main in case of HT/MC, return it */
         Prcb = KiProcessorBlock[i];
         if ((CurrentProc & 1) &&
-            Prcb == Prcb->MultiThreadSetMaster)
+            KiPrcbIsCorePrimary(Prcb))
         {
             /* Assume processor can do HT or multicore */
             ProcessorFlags = 1;
@@ -3279,7 +3279,7 @@ QSI_DEF(SystemLogicalProcessorInformation)
             /* If set is the same for PRCB and multithread, then
              * actually, the processor is single core
              */
-            if (Prcb->SetMember == Prcb->MultiThreadProcessorSet)
+            if (KiPrcbAffinity(Prcb) == KiPrcbCoreSet(Prcb))
             {
                 ProcessorFlags = 0;
             }
@@ -3287,7 +3287,7 @@ QSI_DEF(SystemLogicalProcessorInformation)
             QSI_LPI_EMIT();
             if (Info != NULL)
             {
-                Info->ProcessorMask = Prcb->MultiThreadProcessorSet;
+                Info->ProcessorMask = KiPrcbCoreSet(Prcb);
 
                 /* Processor core needs 1 if HT/MC is supported */
                 Info->Relationship = RelationProcessorCore;
@@ -4150,7 +4150,7 @@ ExpQueryLogicalProcessorInformationEx(
         do
         {
             Prcb = KiProcessorBlock[i];
-            if ((CurrentProc & 1) && (Prcb == Prcb->MultiThreadSetMaster))
+            if ((CurrentProc & 1) && KiPrcbIsCorePrimary(Prcb))
             {
                 if (WantCores)
                 {
@@ -4160,9 +4160,9 @@ ExpQueryLogicalProcessorInformationEx(
                         ExpFillProcessorRelationship(
                             Info,
                             RelationProcessorCore,
-                            (Prcb->SetMember != Prcb->MultiThreadProcessorSet)
+                            (KiPrcbAffinity(Prcb) != KiPrcbCoreSet(Prcb))
                                 ? LTP_PC_SMT : 0,
-                            Prcb->MultiThreadProcessorSet);
+                            KiPrcbCoreSet(Prcb));
                     }
                 }
                 if (WantModules)
@@ -4173,7 +4173,7 @@ ExpQueryLogicalProcessorInformationEx(
                         ExpFillProcessorRelationship(Info,
                                                      RelationProcessorModule,
                                                      0,
-                                                     Prcb->MultiThreadProcessorSet);
+                                                     KiPrcbCoreSet(Prcb));
                     }
                 }
             }
@@ -4329,7 +4329,7 @@ ExpQueryCpuSetInformation(
         Information[OutputIndex].CpuSet.Id = 0x100 + ProcessorIndex;
         Information[OutputIndex].CpuSet.Group = 0;
         Information[OutputIndex].CpuSet.LogicalProcessorIndex = (UCHAR)ProcessorIndex;
-        Information[OutputIndex].CpuSet.CoreIndex = Prcb->MultiThreadSetMaster ? (UCHAR)Prcb->MultiThreadSetMaster->Number : (UCHAR)ProcessorIndex;
+        Information[OutputIndex].CpuSet.CoreIndex = (UCHAR)KiPrcbCoreIndex(Prcb);
         Information[OutputIndex].CpuSet.LastLevelCacheIndex = 0;
         Information[OutputIndex].CpuSet.NumaNodeIndex = Prcb->ParentNode ? (UCHAR)Prcb->ParentNode->NodeNumber : 0;
         Information[OutputIndex].CpuSet.EfficiencyClass = 0;

@@ -71,11 +71,10 @@ KiCheckForTimerExpiration(
     if (KiTimerTableListHead[Hand & (TIMER_TABLE_SIZE - 1)].Time.QuadPart <= (ULONG64)InterruptTime.QuadPart)
     {
         /* Check if we are already doing expiration */
-        if (!Prcb->TimerRequest)
+        if (!KiPrcbTimerPending(Prcb))
         {
             /* Request a DPC to handle this */
-            Prcb->TimerRequest = (ULONG_PTR)TrapFrame;
-            Prcb->TimerHand = Hand;
+            KiPrcbRequestTimer(Prcb, TrapFrame, Hand);
             KiRequestDispatchInterrupt(Prcb);
         }
     }
@@ -98,7 +97,7 @@ KiCheckClockWatchdog(
     {
         TargetPrcb = KiProcessorBlock[Number];
         if ((TargetPrcb == NULL) || (TargetPrcb == Prcb) ||
-            !(KeActiveProcessors & TargetPrcb->SetMember) ||
+            !(KeActiveProcessors & KiPrcbAffinity(TargetPrcb)) ||
             KiClockTickSuspended(TargetPrcb))
         {
             continue;
@@ -126,8 +125,8 @@ KiCheckClockOwnerWatchdog(
         return;
     }
 
-    Watchers = KeActiveProcessors & ~OwnerPrcb->SetMember;
-    if ((Watchers & (~Watchers + 1)) != Prcb->SetMember)
+    Watchers = KeActiveProcessors & ~KiPrcbAffinity(OwnerPrcb);
+    if ((Watchers & (~Watchers + 1)) != KiPrcbAffinity(Prcb))
         return;
 
     Timeout = KI_CLOCK_WATCHDOG_TIMEOUT / KeMaximumIncrement;
@@ -221,10 +220,9 @@ KeUpdateSystemTime(IN PKTRAP_FRAME TrapFrame,
         Ticks = (ULONG)min(NewTick - OldTick, (ULONGLONG)MAXULONG);
 
         /* A delayed clock can cross timer buckets that neither endpoint visits. */
-        if (Ticks > 1 && !Prcb->TimerRequest)
+        if (Ticks > 1 && !KiPrcbTimerPending(Prcb))
         {
-            Prcb->TimerRequest = (ULONG_PTR)TrapFrame;
-            Prcb->TimerHand = KeTickCount.LowPart;
+            KiPrcbRequestTimer(Prcb, TrapFrame, KeTickCount.LowPart);
             KiRequestDispatchInterrupt(Prcb);
         }
 

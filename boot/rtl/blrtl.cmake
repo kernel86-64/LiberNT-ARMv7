@@ -5,6 +5,11 @@ add_definitions(
     -D_NTSYSTEM_)
 
 set(NTOS_RTL_SOURCE_DIR "${REACTOS_SOURCE_DIR}/sdk/lib/rtl")
+if(ARCH STREQUAL "arm")
+    list(APPEND SOURCE ${NTOS_RTL_SOURCE_DIR}/arm/reloc.c)
+else()
+    list(APPEND SOURCE ${NTOS_RTL_SOURCE_DIR}/reloc.c)
+endif()
 include_directories(${NTOS_RTL_SOURCE_DIR})
 
 if (CMAKE_C_COMPILER_ID STREQUAL "GNU" OR CMAKE_C_COMPILER_ID STREQUAL "Clang")

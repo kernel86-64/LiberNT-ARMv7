@@ -656,12 +656,7 @@ KeStartThread(IN OUT PKTHREAD Thread)
     NodePrcb = KiProcessorBlock[Process->ThreadSeed];
 
     /* Calculate affinity mask */
-#ifdef _M_ARM
-    DbgBreakPoint();
-    Set = 0;
-#else
-    Set = ~NodePrcb->MultiThreadProcessorSet;
-#endif
+    Set = ~KiPrcbCoreSet(NodePrcb);
     Mask = Node->ProcessorMask & Process->Affinity;
     Set &= Mask;
     if (Set) Mask = Set;
@@ -1288,7 +1283,7 @@ KeRevertToUserAffinityThread(VOID)
 
     /* Get the current PRCB and check if it doesn't match this affinity */
     Prcb = KeGetCurrentPrcb();
-    if (!(Prcb->SetMember & KiThreadAffinityMask(CurrentThread)))
+    if (!(KiPrcbAffinity(Prcb) & KiThreadAffinityMask(CurrentThread)))
     {
         /* Lock the PRCB */
         KiAcquirePrcbLock(Prcb);
@@ -1383,7 +1378,7 @@ KeSetSystemAffinityThread(IN KAFFINITY Affinity)
 
     /* Get the current PRCB and check if it doesn't match this affinity */
     Prcb = KeGetCurrentPrcb();
-    if (!(Prcb->SetMember & KiThreadAffinityMask(CurrentThread)))
+    if (!(KiPrcbAffinity(Prcb) & KiThreadAffinityMask(CurrentThread)))
     {
         /* Lock the PRCB */
         KiAcquirePrcbLock(Prcb);

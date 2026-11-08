@@ -9,138 +9,107 @@
 
 #include <ksarm.h>
 
-    IMPORT KeLowerIrql
-
     TEXTAREA
 
-/*!
- * \name KiSwapContextInternal
- *
- * \brief
- *     The KiSwapContextInternal routine switches context to another thread.
- *
- * \param r0
- *     Pointer to the KTHREAD to which the caller wishes to switch to.
- *
- * \param r1
- *     Pointer to the KTHREAD to which the caller wishes to switch from.
- *
- * \param r2
- *     APC bypass
- *
- * \return
- *     None.
- *
- * \remarks
- *     ...
- *
- *--*/
-    NESTED_ENTRY KiSwapContextInternal
-
-    /* Push a KSWITCH_FRAME on the stack */
-    stmdb sp!,{r2,r3,r11,lr} // FIXME: what is the 2nd field?
-    // PROLOG_PUSH {r2,r3,r11,lr}
-
-    PROLOG_END KiSwapContextInternal
-
-    /* Save kernel stack of old thread */
-    str sp, [r1, #ThKernelStack]
-
-    /* Save new thread in R11 */
-    mov r11, r0
-
-    //bl KiSwapContextSuspend
-    __debugbreak
-
-    /* Load stack of new thread */
-    ldr sp, [r11, #ThKernelStack]
-
-    /* Reload APC bypass */
-    ldr r2, [sp, #SwApcBypass]
-
-    //bl KiSwapContextResume
-    __debugbreak
-
-    /* Restore R2, R11 and return */
-    ldmia sp!,{r2,r3,r11,pc}
-
-    NESTED_END KiSwapContextInternal
-
-
-/*!
- * KiSwapContext
- *
- * \brief
- *     The KiSwapContext routine switches context to another thread.
- *
- * BOOLEAN
- * KiSwapContext(
- *     _In_ KIRQL WaitIrql,
- *     _Inout_ PKTHREAD CurrentThread);
- *
- * \param WaitIrql <r0>
- *     ...
- *
- * \param CurrentThread <r1>
- *     Pointer to the KTHREAD of the current thread.
- *
- * \return
- *     The WaitStatus of the Target Thread.
- *
- * \remarks
- *     This is a wrapper around KiSwapContextInternal which will save all the
- *     non-volatile registers so that the Internal function can use all of
- *     them. It will also save the old current thread and set the new one.
- *
- *     The calling thread does not return after KiSwapContextInternal until
- *     another thread switches to it.
- *
- *--*/
     NESTED_ENTRY KiSwapContext
+    cpsid i
+    .seh_nop
+    vpush {d16-d31}
+    .seh_save_fregs {d16-d31}
+    vpush {d0-d15}
+    .seh_save_fregs {d0-d15}
+    sub sp, sp, #VsVfpD
+    .seh_stackalloc VsVfpD
+    vmrs r3, fpscr
+    .seh_nop_w
+    str r3, [sp, #VsFpscr]
+    .seh_nop
+    push.w {r4-r11, lr}
+    .seh_save_regs_w {r4-r11, lr}
+    sub sp, sp, #ExR4
+    .seh_stackalloc ExR4
+    sub sp, sp, #KSWITCH_FRAME_LENGTH
+    .seh_stackalloc KSWITCH_FRAME_LENGTH
+    strb r0, [sp, #SwApcBypass]
+    .seh_nop_w
+    str.w r11, [sp, #SwR11]
+    .seh_nop_w
+    adr.w r3, .Lswitch_restore
+    .seh_nop_w
+    orr r3, r3, #1
+    .seh_nop_w
+    str r3, [sp, #SwReturn]
+    .seh_nop
+    PROLOG_END
+    mov r4, r1
+    mov r3, sp
+    str r3, [r1, #ThKernelStack]
+    mrc p15, 0, r2, c13, c0, 4
+    bic r2, r2, #0xff
+    bic r2, r2, #0xf00
+    ldr r2, [r2, #PcCurrentThread]
+    ldr r3, [r2, #ThKernelStack]
+    mov sp, r3
+    ldrb r0, [sp, #SwApcBypass]
+    mov r1, r4
+    bl KiArmSwapContextResume
+    ldr r3, [sp, #SwReturn]
+    bx r3
+.Lswitch_restore:
+    .seh_startepilogue
+    add sp, sp, #KSWITCH_FRAME_LENGTH
+    .seh_stackalloc KSWITCH_FRAME_LENGTH
+    add sp, sp, #ExR4
+    .seh_stackalloc ExR4
+    pop.w {r4-r11, lr}
+    .seh_save_regs_w {r4-r11, lr}
+    ldr r3, [sp, #VsFpscr]
+    .seh_nop
+    vmsr fpscr, r3
+    .seh_nop_w
+    add sp, sp, #VsVfpD
+    .seh_stackalloc VsVfpD
+    vpop {d0-d15}
+    .seh_save_fregs {d0-d15}
+    vpop {d16-d31}
+    .seh_save_fregs {d16-d31}
+    cpsie i
+    .seh_nop
+    bx lr
+    .seh_nop
+    .seh_endepilogue
+    NESTED_END
 
-    /* Push non-volatiles and return address on the stack */
-    stmdb sp!,{r4,r5,r6,r7,r8,r9,r10,r11,lr}
-    // PROLOG_PUSH {r4,r5,r6,r7,r8,r9,r10,r11,lr}
-
-    PROLOG_END KiSwapContext
-
-    /* Do the swap with the registers correctly setup */
-    mov32 r0, 0xFFDFF000 // FIXME: properly load the PCR into r0 (PCR should be in CP15, c3, TPIDRPRW)
-    ldr r0, [r0, #PcCurrentThread] /* Pointer to the new thread */
-    bl KiSwapContextInternal
-
-    /* Restore non-volatiles and return */
-    ldmia sp!,{r4,r5,r6,r7,r8,r9,r10,r11,pc}
-
-    NESTED_END KiSwapContext
-
-
-
-    NESTED_ENTRY KiThreadStartup
-    PROLOG_END KiThreadStartup
-
-    /* Lower IRQL to APC_LEVEL */
-    mov a1, #1
-    bl KeLowerIrql
-
-    /* Set the start address and startup context */
-    mov a1, r6
-    mov a2, r5
+    .global KiThreadStartup
+    .thumb_func
+KiThreadStartup:
+    add sp, sp, #KSWITCH_FRAME_LENGTH
+    add sp, sp, #ExR4
+    pop.w {r4-r11, lr}
+    ldr r3, [sp, #VsFpscr]
+    vmsr fpscr, r3
+    add sp, sp, #VsVfpD
+    vpop {d0-d15}
+    vpop {d16-d31}
+    cpsie i
+    .seh_proc KiThreadStartupContext
+KiThreadStartupContext:
+    push {r4, lr}
+    .seh_save_regs {r4, lr}
+    .seh_endprologue
+    movs r0, #APC_LEVEL
+    bl KfLowerIrql
+    mov r0, r6
+    mov r1, r5
     blx r7
-
-    /* The function must not return! */
-    __assertfail
-
-    NESTED_END KiThreadStartup
-
-
-    NESTED_ENTRY KiSwitchThreads
-    PROLOG_END KiSwitchThreads
-
-	// UNIMPLEMENTED!
-	__debugbreak
-
-    NESTED_END KiSwitchThreads
+    cbz r4, .Lsystem_thread_returned
+    add sp, sp, #8
+    add.w r0, sp, #(VFP_STATE_LENGTH + KEXCEPTION_FRAME_LENGTH)
+    add.w r1, sp, #VFP_STATE_LENGTH
+    b KiExceptionExit
+.Lsystem_thread_returned:
+    movs r0, #NO_USER_MODE_CONTEXT
+    bl KeBugCheck
+    NESTED_END
 
     END
-/* EOF */

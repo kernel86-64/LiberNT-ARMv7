@@ -1,8 +1,9 @@
 # ARMv7-A port
 
-The current milestone is an ARM32 FreeLoader running under EDK II on QEMU
-`virt`, with a Cortex-A15, one CPU and 512 MiB of RAM. This is an NT 10.0
-port in progress, not a working ARM32 kernel or a ReactOS NT 5.2 build.
+The current milestone boots the real ARM32 kernel through EDK II and FreeLoader
+on QEMU `virt`, with a Cortex-A15, one CPU and 512 MiB of RAM. The kernel reaches
+`KiSystemStartup`, `KiInitializeSystem` and NVS phase 0 after `ExitBootServices`.
+This remains an NT 10.0 port in progress; native user space is not booted.
 
 ## Build and boot tests
 
@@ -21,14 +22,15 @@ ARM32 selects the FreeLoader UEFI implementation because the separate
 ARM32 BIOS target in this configuration. The historical `Windows2003` entry
 type uses the compiled `_WIN32_WINNT` value, which is 0x0a00 in this build.
 
-The test harness needs `qemu-system-arm`, `mkfs.vfat`, and mtools. Its default
+The test harness needs `qemu-system-arm`, `mkfs.vfat`, and mtools.
+The `clock` stage also uses a GDB build with ARM support. Its default
 firmware is `/usr/share/qemu/edk2-arm-code.fd`, with the corresponding
 `edk2-arm-vars.fd` beside it. Override the code path with `--firmware`.
 This must be ARM32 firmware; AArch64 AAVMF is a different execution environment.
 
 The harness builds `arm-uefi-tests.img`, boots `EFI/BOOT/BOOTARM.EFI`, and reuses
 `QEMU_VARS.fd`. These are disposable test media, not a full OS image. It
-performs two independent boots:
+supports these boot stages:
 
 - `abi`: a real EFI regression test of nonzero and zero frame-free `longjmp` returns,
   R4–R11, D8–D15 and FPSCR preservation, explicit establisher-frame capture,
@@ -46,13 +48,39 @@ performs two independent boots:
   byte/halfword/word accesses, consecutive buffers, boundaries and zero counts.
   These memory-backed MMIO tests do not prove real device behavior or SMP
   ordering. Portable `_logb`/`_logbf` are checked on normal, subnormal, infinite
-  and NaN inputs. Full OS exception dispatch and context restoration are not
-  covered by this firmware test.
+  and NaN inputs. OS exception dispatch, collided unwinds and `NtContinue`
+  restoration have not yet run under LiberNT. Additional tests execute real
+  SVC, undefined-instruction and data-abort entry/return, switch between two
+  kernel stacks, preserve all VFP registers across switching, check same-root
+  process affinity updates, and exercise ARM/Thumb MOV32 relocation fixtures
+  and runtime debug-service argument dispatch. Real SVC calls through the
+  production kernel stubs and dispatcher cover 0, 4, 7 and 17 arguments,
+  caller LR preservation, restoration of `PreviousMode`, return values and
+  an out-of-range service ID. The fixture rejects unexpected user probing
+  or exception unwinding; it does not validate user-stack faults. Processor
+  control-state tests read the real CPU ID and MMU control registers, modify
+  TPIDRURW, restore it, and compare the supported debugger register snapshot.
 - `loader`: the actual FreeLoader initializes firmware services, mounts FAT32,
   reads `freeldr.ini`, and parses the selected entry. No kernel is supplied on
   the fixture. Passing this stage does not mean that kernel startup works.
 
-Use `--stage abi` or `--stage loader` to select one boot. Each boot is headless,
+- `kernel`: the actual FreeLoader loads `ntoskrnl.exe`, the QEMU virt HAL,
+  debugger transport and framebuffer boot video driver with a small SYSTEM
+  hive and NLS payload. Success requires NVS phase-0 memory and boot-image
+  diagnostics, not just reaching a firmware or kernel entry marker. The
+  fixture has no boot storage drivers and is not a complete installation.
+
+- `clock`: uses the kernel fixture, checks continued growth of the shared
+  interrupt-time and tick counters through GDB, and reaches phase 1's boot
+  partition lookup. Its expected result is `INACCESSIBLE_BOOT_DEVICE`
+  (`0x7b`, `STATUS_OBJECT_NAME_NOT_FOUND`) because the fixture has no kernel
+  storage drivers. This is a clock/startup regression, not a successful OS boot.
+
+Use `--stage abi`, `--stage loader`, `--stage kernel` or `--stage clock`
+to select one boot.
+The default `both` runs the ABI and loader stages. `kernel` and `clock` leave the
+successful guest stopped for inspection. Use GDB's `monitor quit` before
+reusing the image. Each boot is headless,
 network-isolated, limited to 30 seconds and a six-second serial-log stall.
 Results are written to `arm-uefi-results.json`; `arm-boot.log` holds the latest
 boot. Exceptions stop the guest through QMP and leave it available to GDB on
@@ -96,6 +124,20 @@ against NT 5.2 while generating an NT 10.0 image.
   QEMU's first FreeLoader exception independently showed CPACR=0 and FPEXC=0
   on entry. The architecture entry enables VFP before compiler-generated C
   code can execute a NEON instruction.
+- [Armv7-A/R Architecture Reference Manual](https://documentation-service.arm.com/static/5f8daeb7f86e16515cdb8c4e),
+  sections B3.6 and A8, defines LPAE geometry and descriptor attributes,
+  software-use bits, XN/PXN, barriers, exception return and MOVW/MOVT encodings.
+  [Microsoft PE/COFF](https://learn.microsoft.com/en-us/windows/win32/debug/pe-format#base-relocation-types)
+  defines ARM MOV32 (5) and Thumb MOV32 (7) base relocations.
+- [GIC architecture specification](https://documentation-service.arm.com/static/5f8ff196f86e16515cdbf969)
+  and [PL031 technical reference](https://documentation-service.arm.com/static/5fa13c81b1a7c5445f29021e)
+  supply the register interfaces used by the bootstrap BSP. The Armv7 manual's
+  generic timer chapter defines CNTFRQ, CNTVCT, CNTV_CVAL and CNTV_CTL. QEMU's
+  [virt platform definitions](https://github.com/qemu/qemu/blob/master/include/hw/arm/virt.h)
+  assign virtual timer PPI 27.
+- Microsoft's [ARM undefined instruction conventions](https://devblogs.microsoft.com/oldnewthing/20210618-00/?p=105324)
+  identify Thumb `0xdefe` as `__debugbreak`. The kernel distinguishes it from
+  the existing private `0xdefd` runtime debug service.
 - [QEMU virt documentation](https://www.qemu.org/docs/master/system/arm/virt.html)
   describes the virtual platform. Hardware discovery and the kernel HAL must
   ultimately consume its device tree rather than reuse OMAP assumptions.
@@ -106,59 +148,111 @@ No Windows binaries have been disassembled or decompiled for this work.
 
 ## Full-build status
 
-The virtual unwind decoder is implemented and tested under EFI. Its metadata
-format follows Microsoft's ARM exception-handling specification; the interpreter
-is adapted from published
-[Wine unwind code](https://github.com/wine-mirror/wine/blob/master/dlls/ntdll/unwind.c).
-The ARM32 dispatcher, full unwind/restore path and ntdll export integration still
-need completion and OS testing before the system DLL dependencies of the kernel
-can be built as part of this milestone. No kernel boot is claimed here.
+The ARM32 RTL now supplies `RtlLookupFunctionEntry`, `RtlVirtualUnwind`,
+`RtlUnwindEx` and `RtlRestoreContext`; ntdll exports use the ARM32 argument
+widths. The decoder follows Microsoft's ARM PE format and is adapted from
+published [Wine unwind code](https://github.com/wine-mirror/wine/blob/master/dlls/ntdll/unwind.c).
+The dispatch walk uses the current LiberNT ARM64 implementation with ARM32
+register sets and call-site adjustment. Context restoration uses `ZwContinue`;
+its kernel trap/continuation path still needs implementation and testing.
+Do not treat DLL linkage as validation of the complete exception runtime.
 
-Kernel DPC helpers now use interlocked operations on the existing ARM
-`DpcRequestSummary` bitfields, as exercised by the EFI test. These fields remain
-existing ARM scaffolding, not a claim of NT10 layout parity. The MMIO routines
-implement the documented register-access and buffer contracts with explicit
-Arm memory barriers; see Microsoft's
-[register-access documentation](https://learn.microsoft.com/en-us/windows-hardware/drivers/ddi/wdm/nf-wdm-read_register_ulong).
-The portable binary-exponent implementation replaces the old ARM `_logb`
-breakpoint stub and supplies `_logbf`.
+Dynamic table address arithmetic uses pointer-sized values. Architecture hooks
+supply function bounds instead of assuming an x64 `EndAddress` field. These
+shared changes pass syntax compilation for amd64, ARM64 and RISC-V64 using
+those compiler targets; these are not full builds or runtime parity tests.
 
-ARM `kiinit.c` still has NT5-era scalar affinity and processor-set consumers,
-and an incorrect pointer declaration for the vector table. These require porting
-to the existing NT10 structures; restoring old fields would not fix the contract.
+The build now links ntdll, framedyn, mmdevapi, msvcrt, msvcr80 and msvcr90 and
+produces the system-image integrity catalog. ARM framedyn exports retain their
+published names and map to the compiler's actual implementation symbols.
+The portable audio backend is included on ARM, and portable binary-exponent
+math replaces the remaining `_logb` breakpoint stub.
 
-The shared headers and assembler-offset generator also compile for amd64 and
-i386 with the generated SDK and those target defines. This is a compile check,
-not a claim of runtime parity or a full build of those ports.
+`kiinit.c` compiles after converting the old affinity/processor-set consumers
+to existing NT10 fields and correcting the vector-table declaration. DPC helpers
+use interlocked operations on the existing ARM `DpcRequestSummary` bitfields;
+the EFI test exercises these production helpers with the kernel headers.
+These fields remain existing ARM scaffolding, not a claim of NT10 layout parity.
+
+The kernel, HAL, FreeLoader, debugger transport and framebuffer boot video
+modules link. `scripts/test-arm-uefi.py --stage kernel` reaches NVS phase 0:
+
+```text
+ARM kernel: KiInitializeSystem, LPB=C3389000 PCR=FFDFF000
+Boot page tables adopted: root at 000043acc000, 13 tables, 1 regions, 483 MB free
+Kernel address space: system mappings at 80000000, nonpaged pool at A0000000 (64 MB), paged pool at A4000000 (64 MB)
+Memory: 478 MB available, commit limit 482 MB
+Boot images: ntoskrnl.exe at C33B2000-C399BFFF, hal.dll at C399C000-C39A5FFF, 4 loaded
+```
+
+Addresses depend on the firmware allocations. The loader allocates the PCR
+from `sizeof(KIPCR)` and derives the PRCB pointer from its actual C field.
+ARM entry offsets use the beginning of the current LPB, not the legacy
+`LoadOrderListHead`-relative offsets. Space for the idle thread's initial
+switch frame is reserved above the active bootstrap stack.
+
+The NVS ARM backend uses three-level LPAE tables: 32-bit virtual addresses,
+40-bit descriptor output addresses, 64-bit entries and 2 MiB blocks. Cortex-A15
+supports LPAE; the loader rejects CPUs without it. The initial direct mapping
+requires RAM below 2 GiB. It maps the firmware's real memory ranges rather
+than the lookup table's synthetic reserved holes. NVS retains its own memory
+manager and pools; the old empty ARM hooks have been removed.
+
+Live boot blocks are split through an identity-mapped assembly routine. This
+keeps code accessible across the required break-before-make interval. The
+normal PTE path uses atomic 64-bit operations and explicit barriers. Software
+write/copy state uses the Arm-defined software descriptor bits; ARMv8 DBM and
+UXN behavior are not assumed on ARMv7.
+
+Native `mm_arm_pte` and ASan/UBSan checks cover 50,324 descriptor and geometry
+assertions. The amd64/i386 PTE and ARM64 TLB native regressions pass as well.
+Shared C changes pass syntax compilation for amd64, ARM64 and RISC-V64; these
+are not full builds or boot tests of those ports. The broader native core
+harness currently fails to build because its Linux-subsystem shim lacks the
+new DRM declarations and implementations; it was not counted as passing.
 
 ## Remaining kernel work
 
-The configure script and LLVM-runtime build complete. The EFI ABI and loader
-boots pass; `d3dcompiler_47` also links after the interlocked shims are supplied.
-The latest build evidence is retained in `output-Clang-arm-debug/arm-build.log`.
+The `virt` HAL currently exports the bootstrap services exercised by the
+kernel. It uses the board's fixed PL011, GICv2 and PL031 locations; device-tree
+discovery, device interrupt binding, DMA,
+complete HAL exports and secondary processor startup remain to be implemented.
+The generic counter backs performance queries and stalls. Phase 1 arms the
+virtual generic timer on PPI 27 at CLOCK_LEVEL. Absolute deadlines account for
+missed periods, and the next period applies a requested interval change.
+Clock IRQs feed the shared kernel time, timer DPCs and runtime accounting.
+The `clock` regression observed over 1,100 ticks and the System thread waking
+from its boot-volume wait before the expected `0x7b` stop. The original stop
+is now reported without recursive control-state breakpoints or an IRQL drop
+while looking up unwind metadata. Device IRQ handling and ARM32 user transitions have
+not been validated by the component EFI tests.
 
-A successful FreeLoader boot must be followed by all of these steps before
-claiming an OS port:
+Kernel DPC/APC software interrupts and same-root process switching now have
+implementations. Kernel service stubs preserve LR around same-mode SVC and
+copy stack arguments below that saved frame. The dispatcher uses R12 for the
+service ID and rejects IDs at or above the service-table limit. Full win32k
+service-thread conversion remains outside this bootstrap implementation. Runtime debug output uses the existing private ARM UDF
+service ABI with the fifth AAPCS argument taken from the interrupted stack.
+LPAE translation/access/permission aborts now enter NVS with the decoded
+read/write/execute access. QEMU verified a demand-zero fault being resolved
+and execution retrying into later PnP initialization. Full user-fault delivery
+and exception unwinding remain unvalidated. Debugger snapshots preserve the
+supported debug registers, thread-pointer registers and FPEXC; banked exception
+registers, full PMU capture and complete processor-freeze restoration remain gaps.
+Full SEH dispatch, bugcheck processor-state capture, user-mode exception
+restoration and the complete ntdll startup path remain unfinished. The fixture
+must gain a real NT boot storage path before firmware-independent disk access
+or the first native user process can be validated. Firmware VirtIO Block I/O
+is not an NT storage driver.
 
-1. Replace the old loader's fixed low-memory PDR allocation and ineffective
-   paging hooks with mappings valid for QEMU RAM starting at 0x40000000.
-   Reconcile PA/VA conversion and self-map consumers with NVS. Finalize
-   `ExitBootServices`, stack ownership, cache/TLB maintenance and kernel entry.
-2. Complete the ARM NVS architecture backend. `arch/arm/hooks.c` currently
-   contains `STATUS_NOT_IMPLEMENTED` paths and no-op PTE/TLB operations;
-   it cannot initialize the NT virtual memory subsystem.
-3. Implement the `virt` HAL: device-tree discovery, GICv2, architectural timer,
-   PL011, interrupt delivery and processor startup. `halarm` currently selects
-   OMAP3 sources and is not a Cortex-A15 `virt` HAL.
-4. Complete kernel entry, exception vectors, context switching and user-mode
-   transitions. The retained ARM `KiSystemStartup` contains an unconditional
-   loop and is not a usable entry point.
-5. Complete ARM32 dispatch/unwind/restore support and exports, ntdll startup and a boot storage
-   path that remains usable after firmware services have ended. UEFI's VirtIO
-   Block I/O support does not provide an NT VirtIO driver.
-6. Build the kernel, HAL, required drivers and native user space; boot them
-   in QEMU and validate the first native process before moving on to SMP,
-   graphics, broader NT 10 APIs or physical boards.
+Cppcheck was run with the ARM build's compile database on 54 changed C/C++
+files present in that database. It reports a parser error in the existing
+`crtdefs.h` `errno_t` declaration; this is not a clean static-analysis result.
+The shared `RtlPcToFileHeader` crash-path change additionally passes syntax
+compilation for amd64, ARM64 and RISC-V64.
+
+The latest compiler evidence is in `output-Clang-arm-debug/arm-build.log`,
+and the reusable guest log is `output-Clang-arm-debug/arm-boot.log`.
 
 Do not enable WoW64/FEX for a 32-bit host. ARM64EC/CHPE and ARM64 structure
 layouts are not a substitute for ARM32 ABI evidence. Audit pointer truncation,

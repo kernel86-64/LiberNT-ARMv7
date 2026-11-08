@@ -91,9 +91,10 @@
 #define MI_MAKE_WRITE_PAGE(x)      ((x)->u.Hard.ReadOnly = 0)
 
 /* Macros to identify the page fault reason from the error code */
-#define MI_IS_NOT_PRESENT_FAULT(FaultCode) TRUE
-#define MI_IS_WRITE_ACCESS(FaultCode) TRUE
-#define MI_IS_INSTRUCTION_FETCH(FaultCode) FALSE
+#define MI_ARM_FAULT_EXECUTE 0x80000000UL
+#define MI_IS_NOT_PRESENT_FAULT(FaultCode) (((FaultCode) & 0x3C) == 4)
+#define MI_IS_WRITE_ACCESS(FaultCode) (((FaultCode) & (1UL << 11)) != 0)
+#define MI_IS_INSTRUCTION_FETCH(FaultCode) (((FaultCode) & MI_ARM_FAULT_EXECUTE) != 0)
 
 /* Convert an address to a corresponding PTE */
 #define MiAddressToPte(x) \

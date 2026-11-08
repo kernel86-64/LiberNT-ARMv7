@@ -20,21 +20,9 @@ RtlpCaptureStackLimits(IN ULONG_PTR Ebp,
                        IN ULONG_PTR *StackBegin,
                        IN ULONG_PTR *StackEnd)
 {
-    UNIMPLEMENTED;
-    return 0;
-}
+    PKTHREAD Thread = KeGetCurrentThread();
 
-/*
- * @unimplemented
- */
-ULONG
-NTAPI
-RtlWalkFrameChain(OUT PVOID *Callers,
-                  IN ULONG Count,
-                  IN ULONG Flags)
-{
-    UNIMPLEMENTED;
-    return 0;
+    *StackBegin = (ULONG_PTR)Thread->StackLimit;
+    *StackEnd = (ULONG_PTR)Thread->InitialStack;
+    return Ebp >= *StackBegin && Ebp < *StackEnd;
 }
-
-/* EOF */

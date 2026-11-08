@@ -12,6 +12,8 @@
 #include "amd64/raise.h"
 #elif defined(_M_ARM64)
 #include "arm64/raise.h"
+#elif defined(_M_ARM)
+#include "arm/raise.h"
 #elif defined(_M_RISCV64)
 #include "riscv64/raise.h"
 #elif defined(_M_PPC)
@@ -26,6 +28,8 @@ RtlpStepContextToCaller(_Inout_ PCONTEXT Context);
 #endif
 
 /* PAGED_CODE equivalent for user-mode RTL */
+BOOLEAN RtlpProcessMachineRelocation(ULONG Type, PUSHORT Address, LONGLONG Delta);
+
 #if DBG
 extern VOID FASTCALL CHECK_PAGED_CODE_RTL(char *file, int line);
 #define PAGED_CODE_RTL() CHECK_PAGED_CODE_RTL(__FILE__, __LINE__)

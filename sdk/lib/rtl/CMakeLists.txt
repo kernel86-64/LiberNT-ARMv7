@@ -36,6 +36,12 @@ if(MSVC)
     set_source_files_properties(${RTL_WINE_SOURCE} PROPERTIES COMPILE_OPTIONS "/wd4267")
 endif()
 
+if(ARCH STREQUAL "arm")
+    list(APPEND SOURCE arm/reloc.c)
+else()
+    list(APPEND SOURCE reloc.c)
+endif()
+
 list(APPEND SOURCE
     ${RTL_WINE_SOURCE}
     wine_debug.c
@@ -141,10 +147,14 @@ elseif(ARCH STREQUAL "amd64")
         set_property(SOURCE amd64/unwind.c APPEND PROPERTY COMPILE_OPTIONS -Xclang -fasync-exceptions)
     endif()
 elseif(ARCH STREQUAL "arm")
-    list(APPEND ASM_SOURCE arm/debug_asm.S)
+    list(APPEND ASM_SOURCE arm/debug_asm.S arm/except_asm.S)
     list(APPEND SOURCE
         arm/except.c
+        arm/context.c
         arm/unwind.c
+        arm/function.c
+        arm/stack.c
+        dynfntbl.c
         byteswap.c
         mem.c)
 elseif(ARCH STREQUAL "arm64")

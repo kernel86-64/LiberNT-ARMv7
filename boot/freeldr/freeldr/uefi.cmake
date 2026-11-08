@@ -55,6 +55,7 @@ elseif(ARCH STREQUAL "arm")
         arch/uefi/arm/runtime.c)
     list(APPEND UEFILDR_COMMON_ASM_SOURCE
         arch/uefi/arm/uefiasm.S
+        arch/uefi/arm/paging.S
         arch/uefi/arm/entry.S)
 elseif(ARCH STREQUAL "arm64")
     list(APPEND UEFILDR_ARC_SOURCE
@@ -294,14 +295,42 @@ if(ARCH STREQUAL "arm" AND CMAKE_C_COMPILER_ID STREQUAL "Clang")
     add_dependencies(arm_abi_layout psdk)
     add_executable(arm_uefi_test
         ${REACTOS_SOURCE_DIR}/modules/rostests/boot/arm/abi.c
+        ${REACTOS_SOURCE_DIR}/modules/rostests/boot/arm/reloc.c
+        ${REACTOS_SOURCE_DIR}/modules/rostests/boot/arm/debugsvc.c
+        ${REACTOS_SOURCE_DIR}/modules/rostests/boot/arm/syscall.c
+        ${REACTOS_SOURCE_DIR}/modules/rostests/boot/arm/syscall_impl.c
+        ${REACTOS_SOURCE_DIR}/modules/rostests/boot/arm/syscall.S
+        ${REACTOS_SOURCE_DIR}/ntoskrnl/ke/arm/control.c
+        ${REACTOS_SOURCE_DIR}/ntoskrnl/ke/arm/debugsvc.c
+        ${REACTOS_SOURCE_DIR}/sdk/lib/rtl/arm/reloc.c
         ${REACTOS_SOURCE_DIR}/modules/rostests/boot/arm/registers.S
         ${REACTOS_SOURCE_DIR}/modules/rostests/boot/arm/unwind.c
+        ${REACTOS_SOURCE_DIR}/modules/rostests/boot/arm/control.c
         ${REACTOS_SOURCE_DIR}/modules/rostests/boot/arm/kernel.c
+        ${REACTOS_SOURCE_DIR}/modules/rostests/boot/arm/traps.c
+        ${REACTOS_SOURCE_DIR}/modules/rostests/boot/arm/switch.c
+        ${REACTOS_SOURCE_DIR}/ntoskrnl/ke/arm/ctxframe.c
+        ${REACTOS_SOURCE_DIR}/ntoskrnl/ke/arm/process.c
+        ${REACTOS_SOURCE_DIR}/ntoskrnl/ke/arm/ctxswtch.s
+        ${REACTOS_SOURCE_DIR}/ntoskrnl/ke/arm/trap.s
+        ${REACTOS_SOURCE_DIR}/ntoskrnl/ke/arm/trapframe.c
         ${REACTOS_SOURCE_DIR}/sdk/lib/rtl/arm/unwind.c
         ${REACTOS_SOURCE_DIR}/sdk/lib/rtl/arm/debug_asm.S
         ${REACTOS_SOURCE_DIR}/ntoskrnl/ex/arm/ioport.s
         arch/uefi/arm/entry.S)
-    set_source_files_properties(${REACTOS_SOURCE_DIR}/modules/rostests/boot/arm/kernel.c PROPERTIES
+    set_source_files_properties(
+        ${REACTOS_SOURCE_DIR}/modules/rostests/boot/arm/syscall.c
+        ${REACTOS_SOURCE_DIR}/modules/rostests/boot/arm/syscall_impl.c
+        ${REACTOS_SOURCE_DIR}/modules/rostests/boot/arm/debugsvc.c
+        ${REACTOS_SOURCE_DIR}/ntoskrnl/ke/arm/control.c
+        ${REACTOS_SOURCE_DIR}/ntoskrnl/ke/arm/debugsvc.c
+        ${REACTOS_SOURCE_DIR}/modules/rostests/boot/arm/control.c
+        ${REACTOS_SOURCE_DIR}/modules/rostests/boot/arm/kernel.c
+        ${REACTOS_SOURCE_DIR}/modules/rostests/boot/arm/traps.c
+        ${REACTOS_SOURCE_DIR}/modules/rostests/boot/arm/switch.c
+        ${REACTOS_SOURCE_DIR}/ntoskrnl/ke/arm/ctxframe.c
+        ${REACTOS_SOURCE_DIR}/ntoskrnl/ke/arm/process.c
+        ${REACTOS_SOURCE_DIR}/ntoskrnl/ke/arm/trapframe.c PROPERTIES
         COMPILE_OPTIONS "-U_BLDR_;-U_NTHAL_"
         COMPILE_DEFINITIONS "_NTOSKRNL_;NTKRNLVISTA;NVS;EX_LEGACY_PUSH_LOCKS")
     target_include_directories(arm_uefi_test PRIVATE

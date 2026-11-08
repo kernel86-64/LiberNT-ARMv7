@@ -1821,6 +1821,11 @@ LoadAndBootWindowsCommon(
 
     /* Exit firmware services after the final loader layout is mapped. */
     MachPrepareForReactOS();
+#elif defined(_M_ARM)
+    WinLdrSetupMachineDependent(LoaderBlock);
+    if (!WinLdrSetupMemoryLayout(LoaderBlock))
+        return ENOEXEC;
+    MachPrepareForReactOS();
 #elif defined(_M_RISCV64)
     /* RISC-V firmware hands the OS loader an S-mode, bare-address-space
      * context. Build and validate the complete Sv39 handoff before the

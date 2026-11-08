@@ -24,11 +24,37 @@
     .endm
 
     .macro STUB_K Name, ArgCount=0
-    LEAF_ENTRY Zw\Name
+    .set .LZw\Name\()_stack, 0
+    .if \ArgCount > 4
+    .set .LZw\Name\()_stack, ((\ArgCount - 4) * 4 + 7) & ~7
+    .endif
+    NESTED_ENTRY Zw\Name
+    push {r4, lr}
+    .seh_save_regs {r4, lr}
+    .if .LZw\Name\()_stack
+    sub sp, #.LZw\Name\()_stack
+    .seh_stackalloc .LZw\Name\()_stack
+    .endif
+    PROLOG_END
+    .if \ArgCount > 4
+    .set .LZw\Name\()_arg, 0
+    .rept \ArgCount - 4
+    ldr r12, [sp, #(.LZw\Name\()_stack + 8 + .LZw\Name\()_arg)]
+    str r12, [sp, #.LZw\Name\()_arg]
+    .set .LZw\Name\()_arg, .LZw\Name\()_arg + 4
+    .endr
+    .endif
     movw r12, #SyscallId
     svc #1
-    bx lr
-    LEAF_END Zw\Name
+    .seh_startepilogue
+    .if .LZw\Name\()_stack
+    add sp, #.LZw\Name\()_stack
+    .seh_stackalloc .LZw\Name\()_stack
+    .endif
+    pop {r4, pc}
+    .seh_save_regs {r4, lr}
+    .seh_endepilogue
+    NESTED_END Zw\Name
     .set SyscallId, SyscallId + 1
     .endm
 

@@ -21,7 +21,7 @@ static const MI_ARCH_DESCRIPTOR MiArchDescriptor =
     MI_ARCH_PTE_BYTES,
     PAGE_SIZE,
     MI_ARCH_PAGE_SHIFT,
-    (1ULL * 1024 * 1024),
+    (2ULL * 1024 * 1024),
     MI_ARCH_LARGE_LEVEL,
     {
         { MI_ARCH_L0_SHIFT, MI_ARCH_L0_BITS, (1ULL << MI_ARCH_L0_BITS) - 1, 1ULL << MI_ARCH_L0_BITS },
@@ -39,13 +39,18 @@ static const MI_ARCH_DESCRIPTOR MiArchDescriptor =
     FALSE,
     TRUE,
     TRUE,
-    FALSE,
+    TRUE,
     TRUE,
     TRUE,
     TRUE,
     TRUE,
     NULL,
-    0
+    0,
+    0,
+    TRUE,
+    FALSE,
+    0x80000,
+    FALSE
 };
 
 const MI_ARCH_DESCRIPTOR *

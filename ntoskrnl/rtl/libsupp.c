@@ -35,18 +35,22 @@ RtlPcToFileHeader(
     PLDR_DATA_TABLE_ENTRY LdrEntry;
     BOOLEAN InSystem;
     KIRQL OldIrql;
+    BOOLEAN LockAcquired;
 
     /* Get the base for this file */
     if ((ULONG_PTR)PcValue > (ULONG_PTR)MmHighestUserAddress)
     {
         /* Acquire the loaded module spinlock */
-        KeAcquireSpinLock(&PsLoadedModuleSpinLock, &OldIrql);
+        LockAcquired = !KeBugCheckActive || KeGetCurrentIrql() <= DISPATCH_LEVEL;
+        if (LockAcquired)
+            KeAcquireSpinLock(&PsLoadedModuleSpinLock, &OldIrql);
 
         /* We are in kernel */
         *BaseOfImage = KiPcToFileHeader(PcValue, &LdrEntry, FALSE, &InSystem);
 
         /* Release lock */
-        KeReleaseSpinLock(&PsLoadedModuleSpinLock, OldIrql);
+        if (LockAcquired)
+            KeReleaseSpinLock(&PsLoadedModuleSpinLock, OldIrql);
     }
     else
     {

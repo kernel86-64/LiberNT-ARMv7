@@ -9,44 +9,39 @@
 #include <ksarm.h>
 
     TEXTAREA
-
     IMPORT KiInitializeSystem
+    IMPORT KiArmInstallVectors
 
     NESTED_ENTRY KiSystemStartup
     PROLOG_END KiSystemStartup
-
-    /* Put us in FIQ mode, set IRQ stack */
-    b .
-    mrs r3, cpsr
-    orr r3, r1, #CPSRM_FIQ
-    //msr cpsr, r3
-    msr cpsr_fc, r3
-    ldr sp, [a1, #LpbKernelStack]
-
-    /* Repeat for IRQ mode */
-    mov r3, #CPSRM_INT
-    msr cpsr_c, r3
-    ldr sp, [a1, #LpbKernelStack]
-
-    /* Put us in ABORT mode and set the panic stack */
-    mov r3, #CPSRM_ABT
-    msr cpsr_c, r3
-    ldr sp, [a1, #LpbKernelStack]
-
-    /* Repeat for UDF (Undefined) mode */
-    mov r3, #CPSRM_UDF
-    msr cpsr_c, r3
-    ldr sp, [a1, #LpbKernelStack]
-
-    /* Put us into SVC (Supervisor) mode and set the kernel stack */
-    mov r3, #CPSRM_SVC
-    msr cpsr_c, r3
-    ldr sp, [a1, #LpbKernelStack]
-
-    /* Go to C code */
+    cpsid if
+    mov r4, r0
+    ldr r1, [r4, #ArmLpbPrcb]
+    sub r1, r1, #PcPrcb
+    mcr p15, 0, r1, c13, c0, 4
+    isb
+    ldr r2, [r4, #LpbArmPanicStack]
+    cps #CPSRM_FIQ
+    mov sp, r2
+    sub r2, r2, #KERNEL_STACK_SIZE
+    cps #CPSRM_ABT
+    mov sp, r2
+    sub r2, r2, #KERNEL_STACK_SIZE
+    cps #CPSRM_UDF
+    mov sp, r2
+    cps #CPSRM_INT
+    ldr sp, [r4, #LpbArmInterruptStack]
+    cps #CPSRM_SVC
+    ldr sp, [r4, #ArmLpbKernelStack]
+    sub sp, sp, #(KSWITCH_FRAME_LENGTH + KEXCEPTION_FRAME_LENGTH + VFP_STATE_LENGTH)
+    mrc p15, 0, r1, c1, c0, 2
+    orr r1, r1, #0x00F00000
+    mcr p15, 0, r1, c1, c0, 2
+    isb
+    mov r1, #0x40000000
+    vmsr fpexc, r1
+    bl KiArmInstallVectors
+    mov r0, r4
     b KiInitializeSystem
-
     NESTED_END KiSystemStartup
-
     END
-/* EOF */

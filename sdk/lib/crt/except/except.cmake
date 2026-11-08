@@ -21,6 +21,7 @@ elseif(ARCH STREQUAL "arm")
         except/arm/ehandler.c
     )
     list(APPEND LIBCNTPR_EXCEPT_ASM_SOURCE
+        except/arm/ehandler_asm.S
         except/arm/__jump_unwind.s
         except/arm/_abnormal_termination.s
         except/arm/_except_handler2.s

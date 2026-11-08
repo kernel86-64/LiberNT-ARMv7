@@ -657,3 +657,17 @@ RtlVirtualUnwind(
 
     return Handler;
 }
+
+ULONG
+RtlpGetFunctionStartAddress(_In_ PRUNTIME_FUNCTION FunctionEntry)
+{
+    return FunctionEntry->BeginAddress;
+}
+
+ULONG_PTR
+RtlpGetFunctionEndAddress(_In_ ULONG_PTR BaseAddress,
+                           _In_ PRUNTIME_FUNCTION FunctionEntry)
+{
+    UNREFERENCED_PARAMETER(BaseAddress);
+    return FunctionEntry->EndAddress;
+}

@@ -16,7 +16,7 @@ typedef
 _Function_class_(GET_RUNTIME_FUNCTION_CALLBACK)
 PRUNTIME_FUNCTION
 GET_RUNTIME_FUNCTION_CALLBACK(
-    _In_ DWORD64 ControlPc,
+    _In_ ULONG_PTR ControlPc,
     _In_opt_ PVOID Context);
 typedef GET_RUNTIME_FUNCTION_CALLBACK *PGET_RUNTIME_FUNCTION_CALLBACK;
 
@@ -43,9 +43,9 @@ typedef struct _DYNAMIC_FUNCTION_TABLE
     LIST_ENTRY ListEntry;
     PRUNTIME_FUNCTION FunctionTable;
     LARGE_INTEGER TimeStamp;
-    ULONG64 MinimumAddress;
-    ULONG64 MaximumAddress;
-    ULONG64 BaseAddress;
+    ULONG_PTR MinimumAddress;
+    ULONG_PTR MaximumAddress;
+    ULONG_PTR BaseAddress;
     PGET_RUNTIME_FUNCTION_CALLBACK Callback;
     PVOID Context;
     PWCHAR OutOfProcessCallbackDll;
@@ -61,26 +61,12 @@ typedef struct _DYNAMIC_FUNCTION_TABLE
 #endif
 } DYNAMIC_FUNCTION_TABLE, *PDYNAMIC_FUNCTION_TABLE;
 
-#ifdef _M_ARM64
 ULONG
-RtlpArm64FunctionLength(
-    _In_ ULONG_PTR ImageBase,
-    _In_ PRUNTIME_FUNCTION FunctionEntry);
-#endif
+RtlpGetFunctionStartAddress(_In_ PRUNTIME_FUNCTION FunctionEntry);
 
-static
-ULONG64
-RtlpGetFunctionEndAddress(
-    _In_ ULONG64 BaseAddress,
-    _In_ PRUNTIME_FUNCTION FunctionEntry)
-{
-#ifdef _M_ARM64
-    return FunctionEntry->BeginAddress + RtlpArm64FunctionLength(BaseAddress, FunctionEntry);
-#else
-    UNREFERENCED_PARAMETER(BaseAddress);
-    return FunctionEntry->EndAddress;
-#endif
-}
+ULONG_PTR
+RtlpGetFunctionEndAddress(_In_ ULONG_PTR BaseAddress,
+                           _In_ PRUNTIME_FUNCTION FunctionEntry);
 
 RTL_SRWLOCK RtlpDynamicFunctionTableLock = { 0 };
 LIST_ENTRY RtlpDynamicFunctionTableList = { &RtlpDynamicFunctionTableList, &RtlpDynamicFunctionTableList };
@@ -144,7 +130,7 @@ NTAPI
 RtlAddFunctionTable(
     _In_ PRUNTIME_FUNCTION FunctionTable,
     _In_ DWORD EntryCount,
-    _In_ DWORD64 BaseAddress)
+    _In_ ULONG_PTR BaseAddress)
 {
     PDYNAMIC_FUNCTION_TABLE dynamicTable;
     ULONG i;
@@ -167,14 +153,14 @@ RtlAddFunctionTable(
     dynamicTable->Type = RF_SORTED;
 
     /* Loop all entries to find the margins */
-    dynamicTable->MinimumAddress = ULONG64_MAX;
+    dynamicTable->MinimumAddress = MAXULONG_PTR;
     dynamicTable->MaximumAddress = 0;
     for (i = 0; i < EntryCount; i++)
     {
         dynamicTable->MinimumAddress = min(dynamicTable->MinimumAddress,
-                                           FunctionTable[i].BeginAddress);
+                                           RtlpGetFunctionStartAddress(&FunctionTable[i]));
         dynamicTable->MaximumAddress = max(dynamicTable->MaximumAddress, RtlpGetFunctionEndAddress(BaseAddress, &FunctionTable[i]));
-        if ((i != 0) && (FunctionTable[i].BeginAddress < FunctionTable[i - 1].BeginAddress))
+        if ((i != 0) && (RtlpGetFunctionStartAddress(&FunctionTable[i]) < RtlpGetFunctionStartAddress(&FunctionTable[i - 1])))
         {
             dynamicTable->Type = RF_UNSORTED;
         }
@@ -193,8 +179,8 @@ RtlAddFunctionTable(
 BOOLEAN
 NTAPI
 RtlInstallFunctionTableCallback(
-    _In_ DWORD64 TableIdentifier,
-    _In_ DWORD64 BaseAddress,
+    _In_ ULONG_PTR TableIdentifier,
+    _In_ ULONG_PTR BaseAddress,
     _In_ DWORD Length,
     _In_ PGET_RUNTIME_FUNCTION_CALLBACK Callback,
     _In_ PVOID Context,
@@ -415,15 +401,15 @@ RtlDeleteFunctionTable(
 PRUNTIME_FUNCTION
 NTAPI
 RtlpLookupDynamicFunctionEntry(
-    _In_ DWORD64 ControlPc,
-    _Out_ PDWORD64 ImageBase,
+    _In_ ULONG_PTR ControlPc,
+    _Out_ PULONG_PTR ImageBase,
     _In_ PUNWIND_HISTORY_TABLE HistoryTable)
 {
     PLIST_ENTRY listLink;
     PDYNAMIC_FUNCTION_TABLE dynamicTable;
     PRUNTIME_FUNCTION functionTable, foundEntry = NULL;
     PGET_RUNTIME_FUNCTION_CALLBACK callback;
-    DWORD64 ipOffset;
+    ULONG_PTR ipOffset;
     ULONG i, indexLow, indexHigh, indexMid;
 
     AcquireDynamicFunctionTableLockShared();
@@ -459,7 +445,7 @@ RtlpLookupDynamicFunctionEntry(
                 while (indexLow < indexHigh)
                 {
                     indexMid = indexLow + (indexHigh - indexLow) / 2;
-                    if (ipOffset < functionTable[indexMid].BeginAddress)
+                    if (ipOffset < RtlpGetFunctionStartAddress(&functionTable[indexMid]))
                         indexHigh = indexMid;
                     else
                         indexLow = indexMid + 1;
@@ -479,7 +465,7 @@ RtlpLookupDynamicFunctionEntry(
             for (i = 0; i < dynamicTable->EntryCount; i++)
             {
                 /* Check if this entry contains the address */
-                if ((ipOffset >= functionTable[i].BeginAddress) &&
+                if ((ipOffset >= RtlpGetFunctionStartAddress(&functionTable[i])) &&
                     (ipOffset < RtlpGetFunctionEndAddress(dynamicTable->BaseAddress, &functionTable[i])))
                 {
                     foundEntry = &functionTable[i];

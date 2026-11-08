@@ -9,6 +9,7 @@
 /* INCLUDES *******************************************************************/
 
 #include <ntoskrnl.h>
+#include <nvs/include/mipte.h>
 #define NDEBUG
 #include <debug.h>
 
@@ -26,7 +27,7 @@ BOOLEAN KeIsArmV6;
 ULONG KeNumberProcessIds;
 ULONG KeNumberTbEntries;
 ULONG ProcessCount; // PERF
-extern PVOID KiArmVectorTable;
+VOID KiArmInstallVectors(VOID);
 #define __ARMV6__ KeIsArmV6
 
 /* FUNCTIONS ******************************************************************/
@@ -57,6 +58,7 @@ KiInitializeKernel(IN PKPROCESS InitProcess,
 
     /* Initialize spinlocks and DPC data */
     KiInitSpinLocks(Prcb, Number);
+    PoInitializePrcb(Prcb);
 
     /* Set stack pointers */
     //Pcr->InitialStack = IdleStack;
@@ -97,7 +99,7 @@ KiInitializeKernel(IN PKPROCESS InitProcess,
 
         /* Initialize the Idle Process and the Process Listhead */
         InitializeListHead(&KiProcessListHead);
-        PageDirectory[0] = 0;
+        PageDirectory[0] = (ULONG)(MiArchBootRootFrame() << PAGE_SHIFT);
         PageDirectory[1] = 0;
         KeInitializeProcess(InitProcess,
                             0,
@@ -124,12 +126,13 @@ KiInitializeKernel(IN PKPROCESS InitProcess,
     InitThread->NextProcessor = Number;
     InitThread->Priority = HIGH_PRIORITY;
     InitThread->State = Running;
-    InitThread->Affinity = 1 << Number;
+    InitThread->Affinity.Mask = (KAFFINITY)1 << Number;
+    InitThread->Affinity.Group = 0;
     InitThread->WaitIrql = DISPATCH_LEVEL;
     InitProcess->ActiveProcessors = 1 << Number;
 
     /* HACK for MmUpdatePageDir */
-    ((PETHREAD)InitThread)->ThreadsProcess = (PEPROCESS)InitProcess;
+    ((PETHREAD)InitThread)->ThreadsProcess = InitProcess;
 
     /* Set up the thread-related fields in the PRCB */
     Prcb->CurrentThread = InitThread;
@@ -209,7 +212,7 @@ KiInitializePcr(IN ULONG ProcessorNumber,
 
     /* Set the Processor Number and current Processor Mask */
     Pcr->Prcb.Number = (UCHAR)ProcessorNumber;
-    Pcr->Prcb.SetMember = 1 << ProcessorNumber;
+    Pcr->Prcb.GroupSetMember = (KAFFINITY)1 << ProcessorNumber;
 
     /* Set the PRCB for this Processor */
     KiProcessorBlock[ProcessorNumber] = Pcr->CurrentPrcb;
@@ -222,7 +225,7 @@ KiInitializePcr(IN ULONG ProcessorNumber,
     Pcr->Prcb.IsrStack = InterruptStack;
 #if 0
     /* Setup the processor set */
-    Pcr->Prcb.MultiThreadProcessorSet = Pcr->Prcb.SetMember;
+    Pcr->Prcb.MultiThreadProcessorSet = Pcr->Prcb.GroupSetMember;
 #endif
 
     /* Copy cache information from the loader block */
@@ -332,9 +335,10 @@ KiInitializeSystem(IN PLOADER_PARAMETER_BLOCK LoaderBlock)
     ULONG Cpu;
     PKTHREAD InitialThread;
     PKPROCESS InitialProcess;
-    ARM_CONTROL_REGISTER ControlRegister;
     PKIPCR Pcr = (PKIPCR)KeGetPcr();
     PKTHREAD Thread;
+
+    DbgPrintEarly("ARM kernel: KiInitializeSystem, LPB=%p PCR=%p\n", LoaderBlock, Pcr);
 
     /* Flush the TLB */
     KeFlushTb();
@@ -357,7 +361,7 @@ KiInitializeSystem(IN PLOADER_PARAMETER_BLOCK LoaderBlock)
     if (Cpu) goto AppCpuInit;
 
     /* Initialize the PCR */
-    RtlZeroMemory(Pcr, PAGE_SIZE);
+    RtlZeroMemory(Pcr, sizeof(*Pcr));
     KiInitializePcr(Cpu,
                     Pcr,
                     InitialThread,
@@ -374,13 +378,13 @@ KiInitializeSystem(IN PLOADER_PARAMETER_BLOCK LoaderBlock)
 AppCpuInit:
     /* Setup CPU-related fields */
     Pcr->Prcb.Number = Cpu;
-    Pcr->Prcb.SetMember = 1 << Cpu;
+    Pcr->Prcb.GroupSetMember = (KAFFINITY)1 << Cpu;
 
     /* Initialize the Processor with HAL */
     HalInitializeProcessor(Cpu, KeLoaderBlock);
 
     /* Set active processors */
-    KeActiveProcessors |= Pcr->Prcb.SetMember;
+    KeActiveProcessors |= Pcr->Prcb.GroupSetMember;
     KeNumberProcessors++;
 
     /* Check if this is the boot CPU */
@@ -396,13 +400,8 @@ AppCpuInit:
     /* Raise to HIGH_LEVEL */
     KfRaiseIrql(HIGH_LEVEL);
 
-    /* Set the exception address to high */
-    ControlRegister = KeArmControlRegisterGet();
-    ControlRegister.HighVectors = TRUE;
-    KeArmControlRegisterSet(ControlRegister);
-
-    /* Setup the exception vector table */
-    RtlCopyMemory((PVOID)0xFFFF0000, &KiArmVectorTable, 14 * sizeof(PVOID));
+    KiArmInstallVectors();
+    MiInitializeKernelVaLayout(LoaderBlock);
 
     /* Initialize the rest of the kernel now */
     KiInitializeKernel((PKPROCESS)LoaderBlock->Process,
@@ -431,12 +430,11 @@ ULONG
 DbgPrintEarly(const char *fmt, ...)
 {
     va_list args;
-    unsigned int i;
     char Buffer[1024];
     PCHAR String = Buffer;
 
     va_start(args, fmt);
-    i = vsprintf(Buffer, fmt, args);
+    vsnprintf(Buffer, sizeof(Buffer), fmt, args);
     va_end(args);
 
     /* Output the message */

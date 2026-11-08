@@ -20,6 +20,55 @@ ULONG KeIcacheFlushCount = 0;
 ULONG KeDcacheFlushCount;
 ULONG KeLargestCacheLine = 64; // FIXME: It depends
 
+NTSTATUS NTAPI
+KxSaveFloatingPointState(PKFLOATING_SAVE FloatingState)
+{
+    UNREFERENCED_PARAMETER(FloatingState);
+    return STATUS_SUCCESS;
+}
+
+NTSTATUS NTAPI
+KxRestoreFloatingPointState(PKFLOATING_SAVE FloatingState)
+{
+    UNREFERENCED_PARAMETER(FloatingState);
+    return STATUS_SUCCESS;
+}
+
+VOID FASTCALL
+KeInvalidateRangeAllCaches(PVOID BaseAddress, ULONG Length)
+{
+    ULONG Ctr, DLine, ILine;
+    ULONG_PTR Address, Last;
+
+    if (Length == 0)
+        return;
+    __asm__ __volatile__("mrc p15, 0, %0, c0, c0, 1" : "=r" (Ctr));
+    DLine = 4UL << ((Ctr >> 16) & 15);
+    ILine = 4UL << (Ctr & 15);
+    Last = (ULONG_PTR)BaseAddress + Length - 1;
+    __asm__ __volatile__("dsb ish" ::: "memory");
+    for (Address = (ULONG_PTR)BaseAddress & ~(ULONG_PTR)(DLine - 1);; Address += DLine)
+    {
+        __asm__ __volatile__("mcr p15, 0, %0, c7, c14, 1" :: "r" (Address) : "memory");
+        if (Last - Address < DLine)
+            break;
+    }
+    __asm__ __volatile__("dsb ish" ::: "memory");
+    for (Address = (ULONG_PTR)BaseAddress & ~(ULONG_PTR)(ILine - 1);; Address += ILine)
+    {
+        __asm__ __volatile__("mcr p15, 0, %0, c7, c5, 1" :: "r" (Address) : "memory");
+        if (Last - Address < ILine)
+            break;
+    }
+    __asm__ __volatile__("dsb ish\n\tisb" ::: "memory");
+}
+
+KCONTINUE_STATUS NTAPI
+KxSwitchKdProcessor(ULONG ProcessorIndex)
+{
+    return ProcessorIndex == KeGetCurrentProcessorNumber() ? ContinueProcessorReselected : ContinueError;
+}
+
 /* FUNCTIONS ******************************************************************/
 
 VOID
@@ -58,35 +107,6 @@ KeZeroPages(IN PVOID Address,
 {
     /* Not using XMMI in this routine */
     RtlZeroMemory(Address, Size);
-}
-
-VOID
-NTAPI
-KiSaveProcessorControlState(OUT PKPROCESSOR_STATE ProcessorState)
-{
-    //
-    // Save some critical stuff we use
-    //
-    __debugbreak();
-#if 0
-    ProcessorState->SpecialRegisters.ControlRegister = KeArmControlRegisterGet();
-    ProcessorState->SpecialRegisters.LockdownRegister = KeArmLockdownRegisterGet();
-    ProcessorState->SpecialRegisters.CacheRegister = KeArmCacheRegisterGet();
-    ProcessorState->SpecialRegisters.StatusRegister = KeArmStatusRegisterGet();
-#endif
-}
-
-VOID
-NTAPI
-KiRestoreProcessorControlState(PKPROCESSOR_STATE ProcessorState)
-{
-    __debugbreak();
-#if 0
-    KeArmControlRegisterSet(ProcessorState->SpecialRegisters.ControlRegister);
-    KeArmLockdownRegisterSet(ProcessorState->SpecialRegisters.LockdownRegister);
-    KeArmCacheRegisterSet(ProcessorState->SpecialRegisters.CacheRegister);
-    KeArmStatusRegisterSet(ProcessorState->SpecialRegisters.StatusRegister);
-#endif
 }
 
 BOOLEAN

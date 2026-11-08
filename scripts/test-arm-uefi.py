@@ -22,13 +22,13 @@ def run(*args, **kwargs):
     subprocess.run([str(arg) for arg in args], check=True, **kwargs)
 
 
-def stop_guest(path):
+def guest_command(path, command):
     with socket.socket(socket.AF_UNIX) as connection:
         connection.settimeout(3)
         connection.connect(str(path))
         stream = connection.makefile('rwb')
         json.loads(stream.readline())
-        for command in ['qmp_capabilities', 'stop']:
+        for command in ['qmp_capabilities', command]:
             stream.write((json.dumps({'execute': command}) + '\n').encode())
             stream.flush()
             while True:
@@ -37,6 +37,28 @@ def stop_guest(path):
                     break
                 if 'error' in response:
                     raise RuntimeError(response['error'])
+
+
+def stop_guest(path):
+    guest_command(path, 'stop')
+
+
+def clock_snapshot(qmp):
+    script = (
+        'python import gdb,json; m=gdb.selected_inferior(); '
+        'r=lambda a:int.from_bytes(m.read_memory(a,8).tobytes(),"little"); '
+        'print("ARM_CLOCK="+json.dumps({"interrupt_time":r(0xffff9008),'
+        '"ticks":r(0xffff9320)}))')
+    try:
+        result = subprocess.run(['gdb', '-q', '-batch', '-ex',
+            'target remote 127.0.0.1:1234', '-ex', script, '-ex', 'detach'],
+            check=True, capture_output=True, text=True, timeout=3)
+    finally:
+        stop_guest(qmp)
+    for line in result.stdout.splitlines():
+        if line.startswith('ARM_CLOCK='):
+            return json.loads(line.split('=', 1)[1])
+    raise RuntimeError('could not read the ARM shared clock counters')
 
 
 def boot(build, firmware, stage, lock):
@@ -61,6 +83,25 @@ def boot(build, firmware, stage, lock):
         'SystemPath=multi(0)disk(0)rdisk(0)partition(0)\\reactos\n'
         'Options=/DEBUG /DEBUGPORT=COM1 /BAUDRATE=115200\n')
     run('mcopy', '-i', image, config, '::/freeldr.ini')
+    if stage in ['kernel', 'clock']:
+        payload = build / 'arm-kernel-payload'
+        payload.mkdir(exist_ok=True)
+        run(build / 'host-tools/bin/mkhive', '-h:SYSTEM', f'-d:{payload}',
+            ROOT / 'modules/rostests/boot/arm/system.inf', stdout=subprocess.DEVNULL)
+        run('mmd', '-i', image, '::/reactos', '::/reactos/system32',
+            '::/reactos/system32/config')
+        for source, name in [
+            (build / 'ntoskrnl/ntoskrnl.exe', 'ntoskrnl.exe'),
+            (build / 'hal/halarm/hal.dll', 'hal.dll'),
+            (build / 'drivers/base/kdrosdbg/kdcom.dll', 'kdcom.dll'),
+            (build / 'drivers/base/bootvid/bootvid.dll', 'bootvid.dll'),
+            (build / 'drivers/base/bootvid/lfbbvid.dll', 'lfbbvid.dll'),
+            (build / 'media/nls/c_1252.nls', 'c_1252.nls'),
+            (build / 'media/nls/c_437.nls', 'c_437.nls'),
+            (ROOT / 'media/nls/l_intl.nls', 'l_intl.nls'),
+        ]:
+            run('mcopy', '-i', image, source, f'::/reactos/system32/{name}')
+        run('mcopy', '-i', image, payload / 'system', '::/reactos/system32/config/system')
     command = [
         'qemu-system-arm', '-machine', 'virt', '-cpu', 'cortex-a15',
         '-m', '512', '-smp', '1', '-display', 'none', '-monitor', 'none',
@@ -74,9 +115,10 @@ def boot(build, firmware, stage, lock):
     keep = False
     started = last_change = time.monotonic()
     previous_size = 0
+    clock = {"interrupt_time": 0, "ticks": 0}
     with log.open('wb') as output:
         process = subprocess.Popen(command, stdout=output, stderr=subprocess.STDOUT,
-                                   pass_fds=(lock.fileno(),))
+                                   pass_fds=(lock.fileno(),), start_new_session=True)
         try:
             while process.poll() is None:
                 time.sleep(0.1)
@@ -85,17 +127,51 @@ def boot(build, firmware, stage, lock):
                 if size != previous_size:
                     last_change, previous_size = now, size
                 text = log.read_text(errors='replace')
-                if 'Exception PC at' in text or 'ASSERT [' in text or 'tests: FAIL' in text:
+                if any(marker in text for marker in [
+                        'Exception PC at', 'ASSERT [', 'tests: FAIL', '[ABORT]', '[PREFETCH ABORT]', '[UNDEF]']):
                     stop_guest(qmp)
                     keep = True
                     raise RuntimeError(
                         f'{stage}: guest stopped for debugging (PID {process.pid}); '
                         f'gdb target remote 127.0.0.1:1234; log: {log}')
+                if stage == 'clock' and '*** Fatal System Error:' in text:
+                    stop_guest(qmp)
+                    keep = True
+                    clock = clock_snapshot(qmp)
+                    break
+                if stage == 'kernel' and 'Boot images: ntoskrnl.exe' in text:
+                    stop_guest(qmp)
+                    keep = True
+                    break
+                if stage == 'clock' and now - last_change >= 6 and now - started < 30:
+                    stop_guest(qmp)
+                    keep = True
+                    snapshot = clock_snapshot(qmp)
+                    if snapshot['interrupt_time'] <= clock['interrupt_time'] or snapshot['ticks'] <= clock['ticks']:
+                        raise RuntimeError('clock: ARM clock counters stopped progressing')
+                    clock = snapshot
+                    last_change = time.monotonic()
+                    guest_command(qmp, 'cont')
+                    keep = False
                 if now - started >= 30 or now - last_change >= 6:
+                    if stage in ['abi', 'kernel', 'clock'] and 'ARMv7 ABI tests: PASS' not in text:
+                        stop_guest(qmp)
+                        keep = True
+                        raise RuntimeError(
+                            f'{stage}: guest stopped after timeout/stall (PID {process.pid}); '
+                            f'gdb target remote 127.0.0.1:1234; log: {log}')
                     break
             text = log.read_text(errors='replace')
             if stage == 'abi':
                 passed = 'ARMv7 ABI tests: PASS' in text and 'tests: FAIL' not in text
+            elif stage in ['kernel', 'clock']:
+                passed = all(marker in text for marker in [
+                    'ARM kernel: KiInitializeSystem', 'Kernel address space:',
+                    'Memory:', 'Boot images: ntoskrnl.exe'])
+                if stage == 'clock':
+                    passed = passed and 'BOOT DRIVERS LOADED' in text and all(
+                        marker in text for marker in ['*** Fatal System Error: 0x0000007b',
+                                                     '0xC0000034']) and clock['ticks'] > 0
             else:
                 passed = all(marker in text for marker in [
                     'FatMount(0) success', 'LoadIdentifier=LiberNT ARMv7',
@@ -110,14 +186,18 @@ def boot(build, firmware, stage, lock):
                 except subprocess.TimeoutExpired:
                     process.kill()
                     process.wait()
-    return {'stage': stage, 'passed': True, 'seconds': round(time.monotonic() - started, 2)}
+    result = {'stage': stage, 'passed': True, 'seconds': round(time.monotonic() - started, 2)}
+    if stage == 'clock':
+        result.update(clock)
+        result['expected_bugcheck'] = 'INACCESSIBLE_BOOT_DEVICE (empty storage fixture)'
+    return result
 
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--build-dir', type=Path, default=ROOT / 'output-Clang-arm-debug')
     parser.add_argument('--firmware', type=Path, default=Path('/usr/share/qemu/edk2-arm-code.fd'))
-    parser.add_argument('--stage', choices=['abi', 'loader', 'both'], default='both')
+    parser.add_argument('--stage', choices=['abi', 'loader', 'kernel', 'clock', 'both'], default='both')
     parser.add_argument('--no-build', action='store_true')
     args = parser.parse_args()
     build = args.build_dir.resolve()
@@ -132,6 +212,9 @@ def main():
         if not args.no_build:
             env = dict(os.environ, CCACHE_DISABLE='1')
             run('ninja', '-C', build, 'uefildr', 'arm_uefi_test', '-j8', env=env)
+            if args.stage in ['kernel', 'clock']:
+                run('ninja', '-C', build, 'ntoskrnl', 'hal', 'kdcom', 'bootvid', 'lfbbvid',
+                    'media/nls/c_1252.nls', 'media/nls/c_437.nls', '-j8', env=env)
         stages = ['abi', 'loader'] if args.stage == 'both' else [args.stage]
         results = []
         try:

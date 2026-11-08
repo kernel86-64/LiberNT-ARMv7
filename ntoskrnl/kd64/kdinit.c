@@ -20,6 +20,7 @@
  * because KdInitSystem() can be called under the debugger lock by
  * KdEnableDebugger(WithLock)().
  */
+#undef DbgPrint
 #define DbgPrint(fmt, ...) (KdpDprintf(fmt, ##__VA_ARGS__), 0)
 #define DbgPrintEx(cmpid, lvl, fmt, ...) (KdpDprintf(fmt, ##__VA_ARGS__), 0)
 

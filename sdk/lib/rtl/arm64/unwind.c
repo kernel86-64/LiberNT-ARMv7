@@ -1016,3 +1016,16 @@ RtlLookupFunctionTable(
     FunctionTable = RtlpArm64GetImageFunctionTable(ControlPc, BaseAddress, NtHeaders, Length);
     return FunctionTable;
 }
+
+ULONG
+RtlpGetFunctionStartAddress(_In_ PRUNTIME_FUNCTION FunctionEntry)
+{
+    return FunctionEntry->BeginAddress;
+}
+
+ULONG_PTR
+RtlpGetFunctionEndAddress(_In_ ULONG_PTR BaseAddress,
+                           _In_ PRUNTIME_FUNCTION FunctionEntry)
+{
+    return FunctionEntry->BeginAddress + RtlpArm64FunctionLength(BaseAddress, FunctionEntry);
+}

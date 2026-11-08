@@ -72,7 +72,7 @@ KiDpcThreadWakeRoutine(
     UNREFERENCED_PARAMETER(SystemArgument1);
     UNREFERENCED_PARAMETER(SystemArgument2);
 
-    KeSetEvent(&Prcb->DpcEvent, IO_NO_INCREMENT, FALSE);
+    KiSignalDpcThread(Prcb);
 }
 
 static PKDPC
@@ -114,7 +114,7 @@ KiExecuteDpc(
 
     for (;;)
     {
-        KeWaitForSingleObject(&Prcb->DpcEvent, Executive, KernelMode, FALSE, NULL);
+        KiWaitForDpcThread(Prcb);
         KeEnterGuardedRegion();
 
         for (;;)
@@ -180,7 +180,7 @@ KiStartDpcThreads(VOID)
         DpcData->DpcQueueDepth = 0;
         DpcData->DpcCount = 0;
 
-        KeInitializeEvent(&Prcb->DpcEvent, SynchronizationEvent, FALSE);
+        KiInitializeDpcThreadWait(Prcb);
         KeInitializeDpc(&KiDpcThreadWakeDpc[Processor], KiDpcThreadWakeRoutine, Prcb);
         KeSetTargetProcessorDpc(&KiDpcThreadWakeDpc[Processor], (CCHAR)Processor);
         KeSetImportanceDpc(&KiDpcThreadWakeDpc[Processor], HighImportance);
@@ -226,7 +226,7 @@ KiCheckTimerTable(IN ULARGE_INTEGER CurrentTime)
             if (Timer->DueTime.QuadPart <= CurrentTime.QuadPart)
             {
                 /* Check if the DPC was queued, but didn't run */
-                if (!(KeGetCurrentPrcb()->TimerRequest) &&
+                if (!(KiPrcbTimerPending(KeGetCurrentPrcb())) &&
                     !(*((volatile PULONG*)(&KiTimerExpireDpc.DpcData))))
                 {
                     /* This is bad, breakpoint! */
@@ -642,10 +642,10 @@ KiQuantumEnd(VOID)
         SmpDbgQuantumEnd(Prcb->Number);
 
     /* Check if a DPC Event was requested to be signaled */
-    if (InterlockedExchange(&Prcb->DpcSetEventRequest, 0))
+    if (KiTakeDpcThreadSignal(Prcb))
     {
         /* Signal it */
-        KeSetEvent(&Prcb->DpcEvent, 0, 0);
+        KiSignalDpcThread(Prcb);
     }
 
     /* Raise to synchronization level and lock the PRCB and thread */
@@ -794,11 +794,10 @@ KiRetireDpcList(IN PKPRCB Prcb)
         KiPrcbDpcTimeCount(Prcb) = 0;
 
         /* Check if this is a timer expiration request */
-        if (Prcb->TimerRequest)
+        if (KiPrcbTimerPending(Prcb))
         {
             /* It is, get the timer hand and disable timer request */
-            TimerHand = Prcb->TimerHand;
-            Prcb->TimerRequest = 0;
+            TimerHand = KiPrcbTakeTimer(Prcb);
 
             /* Expire timers with interrupts enabled */
             _enable();
@@ -1094,7 +1093,7 @@ KeInsertQueueDpc(IN PKDPC Dpc,
                         (DpcData->DpcQueueDepth >=
                          Prcb->MaximumDpcQueueDepth)) &&
                         (!(AFFINITY_MASK(Cpu) & KiIdleSummary) ||
-                         (Prcb->Sleeping)))
+                         (KiPrcbIsSleeping(Prcb))))
                     {
                         /* Set interrupt requested */
                         KiSetDpcInterruptRequested(Prcb);
@@ -1320,7 +1319,7 @@ KeFlushQueuedDpcs(VOID)
                 if (TargetPrcb == KeGetCurrentPrcb())
                     HalRequestSoftwareInterrupt(DISPATCH_LEVEL);
                 else
-                    KiIpiSend(TargetPrcb->SetMember, IPI_DPC);
+                    KiIpiSend(KiPrcbAffinity(TargetPrcb), IPI_DPC);
                 KeLowerIrql(OldIrql);
             }
 

@@ -9,6 +9,10 @@
 /* INCLUDES *******************************************************************/
 
 #include <ntoskrnl.h>
+#if defined(_ARM_VIRT_)
+#include <armvirt.h>
+#define UART_BASE ((ULONG_PTR)ARM_VIRT_UART_VIRTUAL)
+#endif
 #include <arm/peripherals/pl011.h>
 #include <cportlib/uartinfo.h>
 #define NDEBUG

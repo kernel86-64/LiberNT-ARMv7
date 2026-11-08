@@ -160,6 +160,34 @@ extern KSCHEDULER_SUBNODE KiNode0SubNode;
 #ifndef KiPrcbTimerTableLockQueue
 #define KiPrcbTimerTableLockQueue(Prcb, Index) (&(Prcb)->LockQueue[LockQueueTimerTableLock + (Index)])
 #endif
+#ifndef KiPrcbAffinity
+#define KiPrcbAffinity(Prcb) ((Prcb)->SetMember)
+#endif
+#ifndef KiPrcbCoreSet
+#define KiPrcbCoreSet(Prcb) ((Prcb)->MultiThreadProcessorSet)
+#define KiPrcbCoreIndex(Prcb) ((Prcb)->MultiThreadSetMaster ? (Prcb)->MultiThreadSetMaster->Number : (Prcb)->Number)
+#define KiPrcbIsCorePrimary(Prcb) ((Prcb) == (Prcb)->MultiThreadSetMaster)
+#endif
+#ifndef KiPrcbTimerPending
+#define KiPrcbTimerPending(Prcb) ((Prcb)->TimerRequest != 0)
+#define KiPrcbRequestTimer(Prcb, TrapFrame, Hand) do { (Prcb)->TimerRequest = (ULONG_PTR)(TrapFrame); (Prcb)->TimerHand = (Hand); } while (0)
+FORCEINLINE ULONG_PTR
+KiPrcbTakeTimer(PKPRCB Prcb)
+{
+    ULONG_PTR Hand = Prcb->TimerHand;
+    Prcb->TimerRequest = 0;
+    return Hand;
+}
+#endif
+#ifndef KiInitializeDpcThreadWait
+#define KiInitializeDpcThreadWait(Prcb) KeInitializeEvent(&(Prcb)->DpcEvent, SynchronizationEvent, FALSE)
+#define KiSignalDpcThread(Prcb) KeSetEvent(&(Prcb)->DpcEvent, IO_NO_INCREMENT, FALSE)
+#define KiWaitForDpcThread(Prcb) KeWaitForSingleObject(&(Prcb)->DpcEvent, Executive, KernelMode, FALSE, NULL)
+#define KiTakeDpcThreadSignal(Prcb) InterlockedExchange(&(Prcb)->DpcSetEventRequest, 0)
+#endif
+#ifndef KiPrcbIsSleeping
+#define KiPrcbIsSleeping(Prcb) ((Prcb)->Sleeping)
+#endif
 #ifdef CONFIG_SMP
 extern ULONG KeMaximumProcessors;
 extern ULONG KeNumprocSpecified;

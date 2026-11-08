@@ -9,6 +9,14 @@
 
 static KPRCB Prcb;
 
+BOOLEAN ArmTestKernelFaultDecoding(void)
+{
+    return MI_IS_NOT_PRESENT_FAULT(0x206) && MI_IS_NOT_PRESENT_FAULT(0xA07) &&
+           !MI_IS_NOT_PRESENT_FAULT(0x20F) && !MI_IS_WRITE_ACCESS(0x206) &&
+           MI_IS_WRITE_ACCESS(0xA06) && !MI_IS_INSTRUCTION_FETCH(0x206) &&
+           MI_IS_INSTRUCTION_FETCH(0x206 | MI_ARM_FAULT_EXECUTE);
+}
+
 BOOLEAN ArmTestKernelDpcState(void)
 {
     LONG Preserved = 0x40000008;
@@ -113,4 +121,39 @@ BOOLEAN ArmTestKernelMmio(void)
         WRITE_REGISTER_BUFFER_ULONG(NULL, Buffer, 0);
     }
     return TRUE;
+}
+
+BOOLEAN ArmTestKernelPrcbHooks(void)
+{
+    ULONG64 Before, After;
+
+    Prcb.DpcRequestSummary = 0x40010002;
+    if (KiPrcbTimerPending(&Prcb)) return FALSE;
+    KiPrcbRequestTimer(&Prcb, NULL, 0x12345678);
+    if (!KiPrcbTimerPending(&Prcb) || Prcb.LastTimerHand != 0x12345678)
+        return FALSE;
+    if (KiPrcbTakeTimer(&Prcb) != 0x12345678 || KiPrcbTimerPending(&Prcb) ||
+        Prcb.DpcRequestSummary != 0x40010002)
+        return FALSE;
+    InterlockedOr(&Prcb.DpcRequestSummary, 4);
+    if (!KiTakeDpcThreadSignal(&Prcb) || KiTakeDpcThreadSignal(&Prcb) ||
+        Prcb.DpcRequestSummary != 0x40010002)
+        return FALSE;
+    Prcb.Number = 3;
+    Prcb.GroupSetMember = 8;
+    Prcb.CoreProcessorSet = 0;
+    if (KiPrcbAffinity(&Prcb) != 8 || KiPrcbCoreSet(&Prcb) != 8 ||
+        KiPrcbCoreIndex(&Prcb) != 3 || !KiPrcbIsCorePrimary(&Prcb))
+        return FALSE;
+    Prcb.CoreProcessorSet = 12;
+    if (KiPrcbCoreIndex(&Prcb) != 2 || KiPrcbIsCorePrimary(&Prcb))
+        return FALSE;
+    Prcb.Number = 2;
+    Prcb.GroupSetMember = 4;
+    if (!KiPrcbIsCorePrimary(&Prcb) || KiPrcbCoreSet(&Prcb) != 12)
+        return FALSE;
+    Before = ReadTimeStampCounter();
+    YieldProcessor();
+    After = ReadTimeStampCounter();
+    return After >= Before && After != 0;
 }

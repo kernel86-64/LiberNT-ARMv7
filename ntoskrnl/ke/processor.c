@@ -33,7 +33,7 @@ FASTCALL
 KiIsProcessorParked(
     _In_ PKPRCB Prcb)
 {
-    return (KiGetNonParkedProcessorSet() & Prcb->SetMember) == 0;
+    return (KiGetNonParkedProcessorSet() & KiPrcbAffinity(Prcb)) == 0;
 }
 
 #ifdef KI_CORE_PARKING
@@ -162,7 +162,7 @@ KiMigrateParkedProcessorWork(
             {
                 KiSetThreadQuantum(Thread, 0);
                 Prcb->QuantumEnd = TRUE;
-                *InterruptSet |= Prcb->SetMember;
+                *InterruptSet |= KiPrcbAffinity(Prcb);
             }
             KiReleasePrcbLock(Prcb);
             KiReleaseThreadLock(Thread);
@@ -208,7 +208,7 @@ PoSetProcessorAggregatorParking(
         if (!(ActiveSet & AFFINITY_MASK(Processor)) || (ProcessedSet & AFFINITY_MASK(Processor)))
             continue;
         Prcb = KiProcessorBlock[Processor];
-        CoreSet = Prcb ? (Prcb->MultiThreadProcessorSet & ActiveSet) : AFFINITY_MASK(Processor);
+        CoreSet = Prcb ? (KiPrcbCoreSet(Prcb) & ActiveSet) : AFFINITY_MASK(Processor);
         if (!CoreSet)
             CoreSet = AFFINITY_MASK(Processor);
         ProcessedSet |= CoreSet;

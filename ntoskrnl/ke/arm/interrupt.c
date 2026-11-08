@@ -14,6 +14,14 @@
 
 /* FUNCTIONS ******************************************************************/
 
+BOOLEAN NTAPI
+KeDispatchSecondaryInterrupt(ULONG Vector, ULONG_PTR Flags, PVOID Reserved)
+{
+    UNREFERENCED_PARAMETER(Flags);
+    UNREFERENCED_PARAMETER(Reserved);
+    return KiDispatchPassiveInterrupt(Vector, NULL);
+}
+
 VOID
 NTAPI
 KeInitializeInterrupt(IN PKINTERRUPT Interrupt,

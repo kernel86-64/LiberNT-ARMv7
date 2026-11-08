@@ -6,6 +6,9 @@
  */
 
 #include <uefildr.h>
+#if defined(_ARM_VIRT_)
+#include <armvirt.h>
+#endif
 
 ULONG FirstLevelDcacheSize;
 ULONG FirstLevelDcacheFillSize;
@@ -24,8 +27,18 @@ FrLdrCheckCpuCompatibility(VOID)
 BOOLEAN
 UefiArchSerialPutChar(_In_ UCHAR Character)
 {
+#if defined(_ARM_VIRT_)
+    volatile ULONG *Uart = (volatile ULONG *)ARM_VIRT_UART_PHYSICAL;
+
+    while (Uart[0x18 / sizeof(ULONG)] & 0x20)
+        __asm__ __volatile__("yield");
+    Uart[0] = Character;
+    __asm__ __volatile__("dsb sy" ::: "memory");
+    return TRUE;
+#else
     UNREFERENCED_PARAMETER(Character);
     return FALSE;
+#endif
 }
 
 #undef KeGetCurrentIrql

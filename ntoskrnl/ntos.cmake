@@ -384,6 +384,7 @@ elseif(ARCH STREQUAL "arm")
     list(APPEND ASM_SOURCE
         ${REACTOS_SOURCE_DIR}/ntoskrnl/ex/arm/ioport.s
         ${REACTOS_SOURCE_DIR}/ntoskrnl/ke/arm/boot.s
+        ${REACTOS_SOURCE_DIR}/ntoskrnl/nvs/arch/arm/bootpte.S
         ${REACTOS_SOURCE_DIR}/ntoskrnl/ke/arm/ctxswtch.s
         ${REACTOS_SOURCE_DIR}/ntoskrnl/ke/arm/stubs_asm.s
         ${REACTOS_SOURCE_DIR}/ntoskrnl/ke/arm/trap.s)
@@ -391,11 +392,20 @@ elseif(ARCH STREQUAL "arm")
         ${REACTOS_SOURCE_DIR}/ntoskrnl/config/arm/cmhardwr.c
         ${REACTOS_SOURCE_DIR}/ntoskrnl/kd64/arm/kdarm.c
         ${REACTOS_SOURCE_DIR}/ntoskrnl/ke/arm/cpu.c
+        ${REACTOS_SOURCE_DIR}/ntoskrnl/ke/arm/control.c
         ${REACTOS_SOURCE_DIR}/ntoskrnl/ke/arm/exp.c
         ${REACTOS_SOURCE_DIR}/ntoskrnl/ke/arm/interrupt.c
         ${REACTOS_SOURCE_DIR}/ntoskrnl/ke/arm/kiinit.c
+        ${REACTOS_SOURCE_DIR}/ntoskrnl/ke/arm/process.c
+        ${REACTOS_SOURCE_DIR}/ntoskrnl/ke/arm/irq.c
+        ${REACTOS_SOURCE_DIR}/ntoskrnl/ke/arm/debugsvc.c
+        ${REACTOS_SOURCE_DIR}/ntoskrnl/ke/arm/syscall.c
+        ${REACTOS_SOURCE_DIR}/ntoskrnl/ke/arm/fault.c
+        ${REACTOS_SOURCE_DIR}/ntoskrnl/ke/arm/atomics.c
         ${REACTOS_SOURCE_DIR}/ntoskrnl/ke/arm/thrdini.c
+        ${REACTOS_SOURCE_DIR}/ntoskrnl/ke/arm/ctxframe.c
         ${REACTOS_SOURCE_DIR}/ntoskrnl/ke/arm/trapc.c
+        ${REACTOS_SOURCE_DIR}/ntoskrnl/ke/arm/trapframe.c
         ${REACTOS_SOURCE_DIR}/ntoskrnl/ke/arm/usercall.c
         ${REACTOS_SOURCE_DIR}/ntoskrnl/ps/arm/psctx.c
         ${REACTOS_SOURCE_DIR}/ntoskrnl/rtl/arm/rtlexcpt.c)

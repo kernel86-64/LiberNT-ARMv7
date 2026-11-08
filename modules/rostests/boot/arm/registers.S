@@ -187,3 +187,135 @@
     .seh_save_regs_w {r3-r11, lr}
     .seh_endepilogue
     NESTED_END
+
+    NESTED_ENTRY ArmTestTrapRegisters
+    push.w {r3-r11, lr}
+    .seh_save_regs_w {r3-r11, lr}
+    vpush {d8-d15}
+    .seh_save_fregs {d8-d15}
+    PROLOG_END
+    mov r4, #68
+    mov r5, #69
+    mov r6, #70
+    mov r7, #71
+    mov r8, #72
+    mov r9, #73
+    mov r10, #74
+    mov r11, #75
+    vmov.f64 d8, #1.0
+    vmov.f64 d9, #2.0
+    vmov.f64 d10, #3.0
+    vmov.f64 d11, #4.0
+    vmov.f64 d12, #5.0
+    vmov.f64 d13, #6.0
+    vmov.f64 d14, #7.0
+    vmov.f64 d15, #8.0
+    ldr r3, =ArmTrapTestExpectedSp
+    mov r2, sp
+    str r2, [r3]
+    mov32 r12, 0x12345678
+    movs r0, #7
+    svc #0
+    cmp r0, #42
+    bne .Ltrap_failed
+    movs r0, #17
+    udf #0
+    cmp r0, #18
+    bne .Ltrap_failed
+    mov32 r0, 0xfffff000
+    ldr r0, [r0]
+    cmp r0, #99
+    bne .Ltrap_failed
+    cmp r4, #68
+    bne .Ltrap_failed
+    cmp r11, #75
+    bne .Ltrap_failed
+    vmov r2, r3, d8
+    cmp r2, #0
+    bne .Ltrap_failed
+    mov32 r1, 0x3ff00000
+    cmp r3, r1
+    bne .Ltrap_failed
+    movs r0, #1
+    b .Ltrap_done
+.Ltrap_failed:
+    movs r0, #0
+.Ltrap_done:
+    .seh_startepilogue
+    vpop {d8-d15}
+    .seh_save_fregs {d8-d15}
+    pop.w {r3-r11, pc}
+    .seh_save_regs_w {r3-r11, lr}
+    .seh_endepilogue
+    NESTED_END
+
+    LEAF_ENTRY KfLowerIrql
+    b ArmSwitchLowerIrql
+    LEAF_END
+
+    NESTED_ENTRY ArmTestSwitchRegisters
+    push.w {r3-r11, lr}
+    .seh_save_regs_w {r3-r11, lr}
+    vpush {d8-d15}
+    .seh_save_fregs {d8-d15}
+    sub sp, sp, #8
+    .seh_stackalloc 8
+    PROLOG_END
+    vmrs r3, fpscr
+    str r3, [sp]
+    mov r3, #0x01000000
+    vmsr fpscr, r3
+    movs r4, #68
+    movs r5, #69
+    mov r11, #75
+    vmov.f64 d0, #2.0
+    vmov.f64 d8, #1.0
+    vmov.f64 d16, #3.0
+    ldr r1, =ArmSwitchMainThread
+    movs r0, #0
+    bl KiSwapContext
+    cmp r0, #1
+    bne .Lswitch_test_failed
+    cmp r4, #68
+    bne .Lswitch_test_failed
+    cmp r5, #69
+    bne .Lswitch_test_failed
+    cmp r11, #75
+    bne .Lswitch_test_failed
+    vmrs r2, fpscr
+    cmp r2, #0x01000000
+    bne .Lswitch_test_failed
+    vmov r2, r3, d0
+    cmp r2, #0
+    bne .Lswitch_test_failed
+    mov32 r1, 0x40000000
+    cmp r3, r1
+    bne .Lswitch_test_failed
+    vmov r2, r3, d8
+    cmp r2, #0
+    bne .Lswitch_test_failed
+    mov32 r1, 0x3ff00000
+    cmp r3, r1
+    bne .Lswitch_test_failed
+    vmov r2, r3, d16
+    cmp r2, #0
+    bne .Lswitch_test_failed
+    mov32 r1, 0x40080000
+    cmp r3, r1
+    bne .Lswitch_test_failed
+    movs r0, #1
+    b .Lswitch_test_done
+.Lswitch_test_failed:
+    movs r0, #0
+.Lswitch_test_done:
+    ldr r3, [sp]
+    vmsr fpscr, r3
+    .seh_startepilogue
+    add sp, sp, #8
+    .seh_stackalloc 8
+    vpop {d8-d15}
+    .seh_save_fregs {d8-d15}
+    pop.w {r3-r11, pc}
+    .seh_save_regs_w {r3-r11, lr}
+    .seh_endepilogue
+    NESTED_END

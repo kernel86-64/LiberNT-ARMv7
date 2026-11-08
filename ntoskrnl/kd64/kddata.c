@@ -672,11 +672,11 @@ KDDEBUGGER_DATA64 KdDebuggerDataBlock =
     FIELD_OFFSET(KPRCB, DpcRoutineActive),
     FIELD_OFFSET(KPRCB, CurrentThread),
     FIELD_OFFSET(KPRCB, MHz),
-#if defined(_M_ARM64)
+#if defined(_M_ARM64) || defined(_M_ARM)
     // Win11 arm64 KPRCB has no CpuType/VendorString; closest equivalents
     FIELD_OFFSET(KPRCB, ProcessorModel),
     FIELD_OFFSET(KPRCB, ProcessorVendorString),
-#elif defined(_M_IX86) || defined(_M_AMD64) || defined(_M_ARM)
+#elif defined(_M_IX86) || defined(_M_AMD64)
     FIELD_OFFSET(KPRCB, CpuType),
     FIELD_OFFSET(KPRCB, VendorString),
 #else

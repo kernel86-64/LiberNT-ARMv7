@@ -9,7 +9,9 @@
 /* INCLUDES ******************************************************************/
 
 /* C Headers */
+#if !defined(_ARM_VIRT_)
 #define DbgPrint DbgPrintEarly
+#endif
 #include <stdio.h>
 
 /* WDK HAL Compilation hack */

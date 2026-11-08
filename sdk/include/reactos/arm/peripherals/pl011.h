@@ -11,7 +11,9 @@
 //
 // UART Registers
 //
+#ifndef UART_BASE
 #define UART_BASE                (ULONG_PTR)0x101F1000
+#endif
 
 #define UART_PL01x_DR            (UART_BASE + 0x00)
 #define UART_PL01x_RSR           (UART_BASE + 0x04)

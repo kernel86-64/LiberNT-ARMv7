@@ -452,6 +452,8 @@ LdrProcessRelocationBlockLongLong(
 
         case IMAGE_REL_BASED_MIPS_JMPADDR:
         default:
+            if (RtlpProcessMachineRelocation(Type, ShortPtr, Delta))
+                break;
             DPRINT1("Unknown/unsupported fixup type %hu.\n", Type);
             DPRINT1("Address %p, Current %u, Count %u, *TypeOffset %x\n",
                     (PVOID)Address, i, Count, SWAPW(*TypeOffset));

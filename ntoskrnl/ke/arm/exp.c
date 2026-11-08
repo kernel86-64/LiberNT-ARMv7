@@ -174,13 +174,6 @@ KiDispatchException(IN PEXCEPTION_RECORD ExceptionRecord,
     /* Look at our exception code */
     switch (ExceptionRecord->ExceptionCode)
     {
-        /* Breakpoint */
-        case STATUS_BREAKPOINT:
-
-            /* Decrement PC by four */
-            Context.Pc -= sizeof(ULONG);
-            break;
-
         /* Internal exception */
         case KI_EXCEPTION_ACCESS_VIOLATION:
 

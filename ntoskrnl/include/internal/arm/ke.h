@@ -1,5 +1,6 @@
 #pragma once
 
+#define KI_ARCH_THREAD_HANDOFF_USES_RUNNING 1
 #define KI_EMULATED_USER_MACHINE 0
 #define KI_EMULATED_USER_SYSTEM_DLL NULL
 
@@ -319,3 +320,65 @@ KiClearDpcThreadState(
 #define KiClockTickSuspended(Prcb) FALSE
 
 #define KiIsUserModeTrap(TrapFrame) ((TrapFrame)->PreviousMode == UserMode)
+
+#define KiPrcbAffinity(Prcb) ((KAFFINITY)(Prcb)->GroupSetMember)
+#define KiPrcbCoreSet(Prcb) ((Prcb)->CoreProcessorSet ? (KAFFINITY)(Prcb)->CoreProcessorSet : KiPrcbAffinity(Prcb))
+#define KiPrcbIsCorePrimary(Prcb) (KiPrcbCoreIndex(Prcb) == (Prcb)->Number)
+#define KiPrcbIsSleeping(Prcb) ((Prcb)->IdleHalt)
+#define KiInitializeDpcThreadWait(Prcb) KeInitializeGate(&(Prcb)->DpcGate)
+#define KiSignalDpcThread(Prcb) KeSignalGateBoostPriority(&(Prcb)->DpcGate)
+#define KiWaitForDpcThread(Prcb) KeWaitForGate(&(Prcb)->DpcGate, Executive, KernelMode)
+#define KiTakeDpcThreadSignal(Prcb) (InterlockedAnd(&(Prcb)->DpcRequestSummary, ~4L) & 4)
+
+FORCEINLINE ULONG
+KiPrcbCoreIndex(PKPRCB Prcb)
+{
+    ULONG Index = Prcb->Number;
+    _BitScanForward(&Index, KiPrcbCoreSet(Prcb));
+    return Index;
+}
+
+#define KiPrcbTimerPending KiArmTimerPending
+#define KiPrcbRequestTimer KiArmRequestTimer
+#define KiPrcbTakeTimer KiArmTakeTimer
+
+FORCEINLINE BOOLEAN
+KiArmTimerPending(PKPRCB Prcb)
+{
+    return (InterlockedCompareExchange(&Prcb->DpcRequestSummary, 0, 0) & 8) != 0;
+}
+
+FORCEINLINE VOID
+KiArmRequestTimer(PKPRCB Prcb, PKTRAP_FRAME TrapFrame, ULONG Hand)
+{
+    UNREFERENCED_PARAMETER(TrapFrame);
+    Prcb->LastTimerHand = Hand;
+    InterlockedOr(&Prcb->DpcRequestSummary, 8);
+}
+
+FORCEINLINE ULONG_PTR
+KiArmTakeTimer(PKPRCB Prcb)
+{
+    ULONG Hand = Prcb->LastTimerHand;
+    InterlockedAnd(&Prcb->DpcRequestSummary, ~8L);
+    return Hand;
+}
+
+FORCEINLINE ULONG64
+ReadTimeStampCounter(VOID)
+{
+    #if defined(__clang__) || defined(__GNUC__)
+    ULONG Low, High;
+    __asm__ __volatile__("isb\n\tmrrc p15, 1, %0, %1, c14" : "=r"(Low), "=r"(High) :: "memory");
+    return ((ULONG64)High << 32) | Low;
+    #else
+    __isb(0xf);
+    return _MoveFromCoprocessor64(15, 1, 14);
+    #endif
+}
+
+DECLSPEC_NORETURN VOID
+KiExceptionExit(PKTRAP_FRAME TrapFrame, PKEXCEPTION_FRAME ExceptionFrame);
+
+KIRQL NTAPI HalpArmGetInterruptIrql(ULONG Source);
+BOOLEAN NTAPI HalpArmDispatchInterrupt(ULONG Source, PKTRAP_FRAME TrapFrame);

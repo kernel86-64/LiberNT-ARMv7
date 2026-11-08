@@ -322,7 +322,7 @@ KiParseProfileList(IN PKTRAP_FRAME TrapFrame,
 
         /* Check if the source is good, and if it's within the range */
         if ((Profile->Source != Source) ||
-            !(Profile->Affinity & KeGetCurrentPrcb()->SetMember) ||
+            !(Profile->Affinity & KiPrcbAffinity(KeGetCurrentPrcb())) ||
             (ProgramCounter < (ULONG_PTR)Profile->RangeBase) ||
             (ProgramCounter >= (ULONG_PTR)Profile->RangeLimit))
         {

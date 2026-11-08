@@ -1,0 +1,22 @@
+; PROJECT:     LiberNT boot tests
+; LICENSE:     GPL-3.0-or-later
+; PURPOSE:     SYSTEM hive for the ARM kernel bootstrap fixture
+; COPYRIGHT:   Copyright 2026 LiberNT contributors
+
+[Version]
+Signature = "$Windows NT$"
+
+[AddReg]
+HKLM,"SYSTEM\Select","Current",0x00010001,1
+HKLM,"SYSTEM\Select","Default",0x00010001,1
+HKLM,"SYSTEM\Select","LastKnownGood",0x00010001,1
+HKLM,"SYSTEM\Select","Failed",0x00010001,0
+HKLM,"SYSTEM\CurrentControlSet\Services",,0x00000010
+HKLM,"SYSTEM\CurrentControlSet\Control\GroupOrderList",,0x00000010
+HKLM,"SYSTEM\CurrentControlSet\Control\ServiceGroupOrder","List",0x00010000,"Boot Bus Extender","System Bus Extender","Boot File System"
+HKLM,"SYSTEM\CurrentControlSet\Control\Nls\CodePage","ACP",0x00000000,"1252"
+HKLM,"SYSTEM\CurrentControlSet\Control\Nls\CodePage","OEMCP",0x00000000,"437"
+HKLM,"SYSTEM\CurrentControlSet\Control\Nls\CodePage","1252",0x00000000,"c_1252.nls"
+HKLM,"SYSTEM\CurrentControlSet\Control\Nls\CodePage","437",0x00000000,"c_437.nls"
+HKLM,"SYSTEM\CurrentControlSet\Control\Nls\Language","Default",0x00000000,"0409"
+HKLM,"SYSTEM\CurrentControlSet\Control\Nls\Language","0409",0x00000000,"l_intl.nls"

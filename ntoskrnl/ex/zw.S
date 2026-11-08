@@ -5,8 +5,13 @@
 
     TEXTAREA
 
+#if defined(_MSC_VER)
 #define SVC_(name, argcount) STUB_K name
 #define SVC_WRAP_(name, argcount) STUB_K name
+#else
+#define SVC_(name, argcount) STUB_K name, argcount
+#define SVC_WRAP_(name, argcount) STUB_K name, argcount
+#endif
 
 #include <sysfuncs.h>
 

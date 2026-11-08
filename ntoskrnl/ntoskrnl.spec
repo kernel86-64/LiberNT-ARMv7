@@ -735,11 +735,13 @@
 @ stdcall KeRemoveQueueDpc(ptr)
 @ stdcall KeRemoveSystemServiceTable(long)
 @ stdcall KeResetEvent(ptr)
-@ stdcall -arch=win32 KeRestoreFloatingPointState(ptr)
+@ stdcall -arch=i386,ppc KeRestoreFloatingPointState(ptr)
+@ stdcall -arch=arm KeRestoreFloatingPointState(ptr) KxRestoreFloatingPointState
 @ stdcall -arch=win64 KeRestoreFloatingPointState(ptr) KxRestoreFloatingPointState
 @ stdcall KeRevertToUserAffinityThread()
 @ stdcall KeRundownQueue(ptr)
-@ stdcall -arch=win32 KeSaveFloatingPointState(ptr)
+@ stdcall -arch=i386,ppc KeSaveFloatingPointState(ptr)
+@ stdcall -arch=arm KeSaveFloatingPointState(ptr) KxSaveFloatingPointState
 @ stdcall -arch=win64 KeSaveFloatingPointState(ptr) KxSaveFloatingPointState
 @ cdecl KeSaveStateForHibernate(ptr)
 @ extern KeServiceDescriptorTable
@@ -1369,6 +1371,7 @@
 @ stdcall RtlLookupElementGenericTableFull(ptr ptr ptr ptr)
 @ stdcall RtlLookupElementGenericTableFullAvl(ptr ptr ptr ptr)
 @ cdecl -arch=win64,ppc RtlLookupFunctionEntry(double ptr ptr)
+@ cdecl -arch=arm RtlLookupFunctionEntry(long ptr ptr)
 @ stdcall RtlMapGenericMask(ptr ptr)
 @ stdcall RtlMapSecurityErrorToNtStatus(long)
 @ stdcall RtlMergeRangeLists(ptr ptr ptr long)
@@ -1402,7 +1405,7 @@
 @ stdcall RtlRemoveEntryHashTable(ptr ptr ptr)
 @ stdcall RtlRemoveUnicodePrefix(ptr ptr)
 @ stdcall RtlReserveChunk(long ptr ptr ptr long)
-@ cdecl -arch=win64 RtlRestoreContext(ptr ptr)
+@ cdecl -arch=arm,win64 RtlRestoreContext(ptr ptr)
 @ stdcall RtlSecondsSince1970ToTime(long ptr)
 @ stdcall RtlSecondsSince1980ToTime(long ptr)
 @ stdcall RtlSelfRelativeToAbsoluteSD(ptr ptr ptr ptr ptr ptr ptr ptr ptr ptr ptr)
@@ -1467,7 +1470,8 @@
 @ stdcall RtlValidSecurityDescriptor(ptr)
 @ stdcall RtlValidSid(ptr)
 @ stdcall RtlVerifyVersionInfo(ptr long long long)
-@ stdcall -arch=!i386 RtlVirtualUnwind(long int64 int64 ptr ptr ptr ptr ptr)
+@ stdcall -arch=arm RtlVirtualUnwind(long long long ptr ptr ptr ptr ptr)
+@ stdcall -arch=win64,ppc RtlVirtualUnwind(long int64 int64 ptr ptr ptr ptr ptr)
 @ stdcall RtlVolumeDeviceToDosName(ptr ptr) IoVolumeDeviceToDosName
 @ stdcall RtlWalkFrameChain(ptr long long)
 @ stdcall RtlWeaklyEnumerateEntryHashTable(ptr ptr)
