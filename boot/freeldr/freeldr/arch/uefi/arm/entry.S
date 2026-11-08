@@ -19,4 +19,3 @@ ArmEfiEntry:
     mov r2, #0x40000000
     vmsr fpexc, r2
     b EfiEntry
-
