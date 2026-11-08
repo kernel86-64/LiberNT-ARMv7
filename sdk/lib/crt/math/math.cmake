@@ -260,6 +260,7 @@ elseif(ARCH STREQUAL "arm")
         math/floor.c
         math/ldexp.c
         math/log.c
+        math/logb.c
         math/log10.c
         math/pow.c
         math/trig.c

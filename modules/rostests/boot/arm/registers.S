@@ -152,3 +152,38 @@
     vpop {d8-d15}
     pop {r3-r11, pc}
     NESTED_END ArmTestSetjmpRegisters
+
+    NESTED_ENTRY ArmTestPeUnwindRegisters
+    push.w {r3-r11, lr}
+    .seh_save_regs_w {r3-r11, lr}
+    vpush {d8-d15}
+    .seh_save_fregs {d8-d15}
+    PROLOG_END
+    mov r4, #68
+    mov r5, #69
+    mov r6, #70
+    mov r7, #71
+    mov r8, #72
+    mov r9, #73
+    mov r10, #74
+    mov r11, #75
+    vmov.f64 d8, #1.0
+    vmov.f64 d9, #2.0
+    vmov.f64 d10, #3.0
+    vmov.f64 d11, #4.0
+    vmov.f64 d12, #5.0
+    vmov.f64 d13, #6.0
+    vmov.f64 d14, #7.0
+    vmov.f64 d15, #8.0
+    mov r1, sp
+    adr r2, .Lpe_unwound
+    orr r2, r2, #1
+    bl ArmTestPeUnwindFrame
+.Lpe_unwound:
+    .seh_startepilogue
+    vpop {d8-d15}
+    .seh_save_fregs {d8-d15}
+    pop.w {r3-r11, pc}
+    .seh_save_regs_w {r3-r11, lr}
+    .seh_endepilogue
+    NESTED_END

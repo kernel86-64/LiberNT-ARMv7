@@ -295,7 +295,22 @@ if(ARCH STREQUAL "arm" AND CMAKE_C_COMPILER_ID STREQUAL "Clang")
     add_executable(arm_uefi_test
         ${REACTOS_SOURCE_DIR}/modules/rostests/boot/arm/abi.c
         ${REACTOS_SOURCE_DIR}/modules/rostests/boot/arm/registers.S
+        ${REACTOS_SOURCE_DIR}/modules/rostests/boot/arm/unwind.c
+        ${REACTOS_SOURCE_DIR}/modules/rostests/boot/arm/kernel.c
+        ${REACTOS_SOURCE_DIR}/sdk/lib/rtl/arm/unwind.c
+        ${REACTOS_SOURCE_DIR}/sdk/lib/rtl/arm/debug_asm.S
+        ${REACTOS_SOURCE_DIR}/ntoskrnl/ex/arm/ioport.s
         arch/uefi/arm/entry.S)
+    set_source_files_properties(${REACTOS_SOURCE_DIR}/modules/rostests/boot/arm/kernel.c PROPERTIES
+        COMPILE_OPTIONS "-U_BLDR_;-U_NTHAL_"
+        COMPILE_DEFINITIONS "_NTOSKRNL_;NTKRNLVISTA;NVS;EX_LEGACY_PUSH_LOCKS")
+    target_include_directories(arm_uefi_test PRIVATE
+        ${REACTOS_SOURCE_DIR}
+        ${REACTOS_SOURCE_DIR}/sdk/lib/drivers/arblib
+        ${REACTOS_BINARY_DIR}/ntoskrnl/include
+        ${REACTOS_BINARY_DIR}/ntoskrnl/include/internal
+        ${REACTOS_SOURCE_DIR}/sdk/include/reactos/drivers
+        ${REACTOS_SOURCE_DIR}/ntoskrnl/nvs/arch/arm)
     set_target_properties(arm_uefi_test PROPERTIES SUFFIX ".efi")
     set_subsystem(arm_uefi_test efi_application)
     set_entrypoint(arm_uefi_test ArmEfiEntry)

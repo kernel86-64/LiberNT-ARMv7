@@ -85,7 +85,7 @@ def boot(build, firmware, stage, lock):
                 if size != previous_size:
                     last_change, previous_size = now, size
                 text = log.read_text(errors='replace')
-                if 'Exception PC at' in text or 'ASSERT [' in text:
+                if 'Exception PC at' in text or 'ASSERT [' in text or 'tests: FAIL' in text:
                     stop_guest(qmp)
                     keep = True
                     raise RuntimeError(

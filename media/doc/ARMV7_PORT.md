@@ -36,8 +36,18 @@ performs two independent boots:
   interlocked-add results. It also checks the `setjmp.h` then `setjmpex.h`
   include order and frame capture through the extended macro.
   Build-time checks pin the ARM32 SDK unwind-table sizes, offsets and context
-  flags. Structured unwinding itself remains unimplemented in the ARM runtime
-  and is not covered by this test.
+  flags. Virtual unwind tests cover packed and full metadata, partial prologues
+  and epilogues, conditional epilogues, VFP saves, nonvolatile context pointers,
+  machine/context frames and leaf functions. A second test unwinds real Clang
+  PE metadata and checks the recovered caller PC, SP, R4–R11 and D8–D15.
+  Context capture checks include context flags, Thumb state and stack alignment.
+  Kernel architecture helpers are linked directly into the EFI fixture: DPC
+  request-summary operations preserve unrelated bits; MMIO routines exercise
+  byte/halfword/word accesses, consecutive buffers, boundaries and zero counts.
+  These memory-backed MMIO tests do not prove real device behavior or SMP
+  ordering. Portable `_logb`/`_logbf` are checked on normal, subnormal, infinite
+  and NaN inputs. Full OS exception dispatch and context restoration are not
+  covered by this firmware test.
 - `loader`: the actual FreeLoader initializes firmware services, mounts FAT32,
   reads `freeldr.ini`, and parses the selected entry. No kernel is supplied on
   the fixture. Passing this stage does not mean that kernel startup works.
@@ -96,17 +106,26 @@ No Windows binaries have been disassembled or decompiled for this work.
 
 ## Full-build status
 
-The attempted `ninja ntoskrnl` build reaches system-DLL linking, which is a
-prerequisite of the kernel's code-integrity catalog. ARM consumers of LLVM
-libunwind fail to link because the ARM32 RTL and ntdll export list do not yet
-provide `RtlUnwindEx`, `RtlVirtualUnwind`, `RtlRestoreContext` and
-`RtlLookupFunctionEntry`. No dummy exports were added to mask this gap.
+The virtual unwind decoder is implemented and tested under EFI. Its metadata
+format follows Microsoft's ARM exception-handling specification; the interpreter
+is adapted from published
+[Wine unwind code](https://github.com/wine-mirror/wine/blob/master/dlls/ntdll/unwind.c).
+The ARM32 dispatcher, full unwind/restore path and ntdll export integration still
+need completion and OS testing before the system DLL dependencies of the kernel
+can be built as part of this milestone. No kernel boot is claimed here.
 
-An isolated compilation of ARM `kiinit.c` also identifies NT 5-era consumers
-of `KPRCB.DpcInterruptRequested` and `SetMember`, scalar assignment to the
-modern `KTHREAD.Affinity`, and an incorrect pointer declaration for the vector
-table. These must be ported to the existing NT 10 structures; restoring old
-fields would not fix the underlying contract.
+Kernel DPC helpers now use interlocked operations on the existing ARM
+`DpcRequestSummary` bitfields, as exercised by the EFI test. These fields remain
+existing ARM scaffolding, not a claim of NT10 layout parity. The MMIO routines
+implement the documented register-access and buffer contracts with explicit
+Arm memory barriers; see Microsoft's
+[register-access documentation](https://learn.microsoft.com/en-us/windows-hardware/drivers/ddi/wdm/nf-wdm-read_register_ulong).
+The portable binary-exponent implementation replaces the old ARM `_logb`
+breakpoint stub and supplies `_logbf`.
+
+ARM `kiinit.c` still has NT5-era scalar affinity and processor-set consumers,
+and an incorrect pointer declaration for the vector table. These require porting
+to the existing NT10 structures; restoring old fields would not fix the contract.
 
 The shared headers and assembler-offset generator also compile for amd64 and
 i386 with the generated SDK and those target defines. This is a compile check,
@@ -134,7 +153,7 @@ claiming an OS port:
 4. Complete kernel entry, exception vectors, context switching and user-mode
    transitions. The retained ARM `KiSystemStartup` contains an unconditional
    loop and is not a usable entry point.
-5. Complete ARM32 unwind/exception support, ntdll startup and a boot storage
+5. Complete ARM32 dispatch/unwind/restore support and exports, ntdll startup and a boot storage
    path that remains usable after firmware services have ended. UEFI's VirtIO
    Block I/O support does not provide an NT VirtIO driver.
 6. Build the kernel, HAL, required drivers and native user space; boot them
