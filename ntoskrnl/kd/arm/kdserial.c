@@ -94,9 +94,19 @@ NTAPI
 KdPortGetByteEx(IN PCPPORT PortInformation,
                 OUT PUCHAR ByteReceived)
 {
-    UNIMPLEMENTED;
-    while (TRUE);
-    return FALSE;
+    ULONG Data;
+
+    UNREFERENCED_PARAMETER(PortInformation);
+    if (READ_REGISTER_ULONG((PULONG)UART_PL01x_FR) & UART_PL01x_FR_RXFE)
+        return FALSE;
+    Data = READ_REGISTER_ULONG((PULONG)UART_PL01x_DR);
+    if (Data & 0xF00)
+    {
+        WRITE_REGISTER_ULONG((PULONG)UART_PL01x_ECR, 0);
+        return FALSE;
+    }
+    *ByteReceived = (UCHAR)Data;
+    return TRUE;
 }
 
 VOID

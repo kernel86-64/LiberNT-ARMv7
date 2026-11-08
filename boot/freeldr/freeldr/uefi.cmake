@@ -311,6 +311,7 @@ if(ARCH STREQUAL "arm" AND CMAKE_C_COMPILER_ID STREQUAL "Clang")
         ${REACTOS_SOURCE_DIR}/ntoskrnl/ke/arm/apc.c
         ${REACTOS_SOURCE_DIR}/ntoskrnl/ke/arm/context.c
         ${REACTOS_SOURCE_DIR}/modules/rostests/boot/arm/control.c
+        ${REACTOS_SOURCE_DIR}/modules/rostests/boot/arm/uart.c
         ${REACTOS_SOURCE_DIR}/modules/rostests/boot/arm/kernel.c
         ${REACTOS_SOURCE_DIR}/modules/rostests/boot/arm/traps.c
         ${REACTOS_SOURCE_DIR}/modules/rostests/boot/arm/switch.c
@@ -335,6 +336,7 @@ if(ARCH STREQUAL "arm" AND CMAKE_C_COMPILER_ID STREQUAL "Clang")
         ${REACTOS_SOURCE_DIR}/ntoskrnl/ke/arm/apc.c
         ${REACTOS_SOURCE_DIR}/ntoskrnl/ke/arm/context.c
         ${REACTOS_SOURCE_DIR}/modules/rostests/boot/arm/control.c
+        ${REACTOS_SOURCE_DIR}/modules/rostests/boot/arm/uart.c
         ${REACTOS_SOURCE_DIR}/modules/rostests/boot/arm/kernel.c
         ${REACTOS_SOURCE_DIR}/modules/rostests/boot/arm/traps.c
         ${REACTOS_SOURCE_DIR}/modules/rostests/boot/arm/switch.c

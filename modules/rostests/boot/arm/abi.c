@@ -28,6 +28,7 @@ extern BOOLEAN ArmTestDebugServices(void);
 extern BOOLEAN ArmTestSystemCalls(void);
 extern BOOLEAN ArmTestKernelFaultDecoding(void);
 extern BOOLEAN ArmTestProcessorControl(void);
+extern BOOLEAN ArmTestUartReceive(void);
 extern BOOLEAN ArmTestContextFrames(void);
 extern int ArmTestPeUnwindRegisters(PVOID ImageBase);
 
@@ -76,6 +77,7 @@ EfiEntry(EFI_HANDLE ImageHandle, EFI_SYSTEM_TABLE *SystemTable)
     Passed = ArmTestSystemCalls() && Passed;
     Passed = ArmTestKernelFaultDecoding() && Passed;
     Passed = ArmTestProcessorControl() && Passed;
+    Passed = ArmTestUartReceive() && Passed;
     Passed = ArmTestContextFrames() && Passed;
     Counter = 40;
     Counter64 = 0x100000000LL;

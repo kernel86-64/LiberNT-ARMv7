@@ -271,6 +271,27 @@ static NTSTATUS NTAPI VbDispatch(PDEVICE_OBJECT Device, PIRP Irp)
     }
     switch (Stack->Parameters.DeviceIoControl.IoControlCode)
     {
+        case IOCTL_MOUNTDEV_QUERY_DEVICE_NAME:
+            if (Length < sizeof(MOUNTDEV_NAME)) break;
+            RtlZeroMemory(Output, sizeof(MOUNTDEV_NAME));
+            ((PMOUNTDEV_NAME)Output)->NameLength = Extension->NameLength;
+            Bytes = FIELD_OFFSET(MOUNTDEV_NAME, Name) + Extension->NameLength;
+            if (Length < Bytes)
+                return VbComplete(Irp, STATUS_BUFFER_OVERFLOW, sizeof(MOUNTDEV_NAME));
+            RtlCopyMemory(((PMOUNTDEV_NAME)Output)->Name, Extension->Name, Extension->NameLength);
+            return VbComplete(Irp, STATUS_SUCCESS, Bytes);
+        case IOCTL_MOUNTDEV_QUERY_UNIQUE_ID:
+            if (Length < sizeof(MOUNTDEV_UNIQUE_ID)) break;
+            RtlZeroMemory(Output, sizeof(MOUNTDEV_UNIQUE_ID));
+            ((PMOUNTDEV_UNIQUE_ID)Output)->UniqueIdLength = sizeof(Controller->Signature) + sizeof(Offset);
+            Bytes = FIELD_OFFSET(MOUNTDEV_UNIQUE_ID, UniqueId) + sizeof(Controller->Signature) + sizeof(Offset);
+            if (Length < Bytes)
+                return VbComplete(Irp, STATUS_BUFFER_OVERFLOW, sizeof(MOUNTDEV_UNIQUE_ID));
+            Offset = Extension->Start * 512;
+            Buffer = ((PMOUNTDEV_UNIQUE_ID)Output)->UniqueId;
+            RtlCopyMemory(Buffer, &Controller->Signature, sizeof(Controller->Signature));
+            RtlCopyMemory(Buffer + sizeof(Controller->Signature), &Offset, sizeof(Offset));
+            return VbComplete(Irp, STATUS_SUCCESS, Bytes);
         case IOCTL_DISK_GET_DRIVE_GEOMETRY:
             if (Length < sizeof(DISK_GEOMETRY)) break;
             RtlCopyMemory(Output, &Controller->Geometry, sizeof(DISK_GEOMETRY));
@@ -350,10 +371,58 @@ static NTSTATUS VbCreateDisk(PDRIVER_OBJECT Driver, VB_CONTROLLER *Controller, U
     Extension->Partition = Partition;
     Extension->Type = Type;
     Extension->Boot = Boot;
+    Extension->NameLength = Name.Length;
+    RtlCopyMemory(Extension->Name, Name.Buffer, Name.Length);
     Device->Flags |= DO_DIRECT_IO;
     Device->Flags &= ~DO_DEVICE_INITIALIZING;
     Device->AlignmentRequirement = FILE_WORD_ALIGNMENT;
     return STATUS_SUCCESS;
+}
+
+static VOID NTAPI VbAnnounceVolumes(PDRIVER_OBJECT Driver, PVOID Context, ULONG Count)
+{
+    UNICODE_STRING Name = RTL_CONSTANT_STRING(MOUNTMGR_DEVICE_NAME);
+    PFILE_OBJECT File;
+    PDEVICE_OBJECT MountManager, Device;
+    VB_EXTENSION *Extension;
+    WCHAR Buffer[1 + RTL_NUMBER_OF(Extension->Name)];
+    PMOUNTMGR_TARGET_NAME Target = (PMOUNTMGR_TARGET_NAME)Buffer;
+    IO_STATUS_BLOCK IoStatus;
+    KEVENT Event;
+    PIRP Irp;
+    NTSTATUS Status;
+
+    UNREFERENCED_PARAMETER(Context);
+    UNREFERENCED_PARAMETER(Count);
+    Status = IoGetDeviceObjectPointer(&Name, FILE_READ_ATTRIBUTES, &File, &MountManager);
+    if (!NT_SUCCESS(Status))
+    {
+        DbgPrint("VIRTBLK: mount manager unavailable: %08lx\n", Status);
+        return;
+    }
+    for (Device = Driver->DeviceObject; Device; Device = Device->NextDevice)
+    {
+        Extension = Device->DeviceExtension;
+        if (!Extension->Partition || !IsRecognizedPartition(Extension->Type)) continue;
+        Target->DeviceNameLength = Extension->NameLength;
+        RtlCopyMemory(Target->DeviceName, Extension->Name, Extension->NameLength);
+        KeInitializeEvent(&Event, NotificationEvent, FALSE);
+        Irp = IoBuildDeviceIoControlRequest(IOCTL_MOUNTMGR_VOLUME_ARRIVAL_NOTIFICATION,
+                                            MountManager, Target,
+                                            FIELD_OFFSET(MOUNTMGR_TARGET_NAME, DeviceName) + Extension->NameLength,
+                                            NULL, 0, FALSE, &Event, &IoStatus);
+        if (!Irp) { Status = STATUS_INSUFFICIENT_RESOURCES; break; }
+        Status = IoCallDriver(MountManager, Irp);
+        if (Status == STATUS_PENDING)
+        {
+            KeWaitForSingleObject(&Event, Executive, KernelMode, FALSE, NULL);
+            Status = IoStatus.Status;
+        }
+        if (!NT_SUCCESS(Status)) break;
+    }
+    ObDereferenceObject(File);
+    if (!NT_SUCCESS(Status))
+        DbgPrint("VIRTBLK: volume arrival failed: %08lx\n", Status);
 }
 
 NTSTATUS NTAPI DriverEntry(PDRIVER_OBJECT Driver, PUNICODE_STRING RegistryPath)
@@ -389,6 +458,7 @@ NTSTATUS NTAPI DriverEntry(PDRIVER_OBJECT Driver, PUNICODE_STRING RegistryPath)
     if (!NT_SUCCESS(Status)) goto Failure;
     if (Mbr[510] != 0x55 || Mbr[511] != 0xAA)
     { Status = STATUS_UNRECOGNIZED_VOLUME; goto Failure; }
+    RtlCopyMemory(&Controller->Signature, Mbr + 440, sizeof(Controller->Signature));
     Controller->Number = IoGetConfigurationInformation()->DiskCount;
     RtlStringCchPrintfW(Buffer, RTL_NUMBER_OF(Buffer), L"\\Device\\Harddisk%lu", Controller->Number);
     RtlInitUnicodeString(&Name, Buffer);
@@ -413,6 +483,7 @@ NTSTATUS NTAPI DriverEntry(PDRIVER_OBJECT Driver, PUNICODE_STRING RegistryPath)
         if (!NT_SUCCESS(Status)) goto Failure;
     }
     IoGetConfigurationInformation()->DiskCount++;
+    IoRegisterBootDriverReinitialization(Driver, VbAnnounceVolumes, NULL);
     DbgPrint("VIRTBLK: MMIO %lu, version %lu, %I64u sectors; boot disk online\n", Slot, Controller->Version, Controller->Sectors);
     return STATUS_SUCCESS;
 Failure:

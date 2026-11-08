@@ -22,3 +22,8 @@ HKLM,"SYSTEM\CurrentControlSet\Services\arm_storage_test","Start",0x00010001,0
 HKLM,"SYSTEM\CurrentControlSet\Services\arm_storage_test","ErrorControl",0x00010001,1
 HKLM,"SYSTEM\CurrentControlSet\Services\arm_storage_test","Group",0x00000000,"Boot File System"
 HKLM,"SYSTEM\CurrentControlSet\Services\arm_storage_test","ImagePath",0x00000000,"system32\drivers\arm_storage_test.sys"
+HKLM,"SYSTEM\CurrentControlSet\Services\mountmgr","Type",0x00010001,1
+HKLM,"SYSTEM\CurrentControlSet\Services\mountmgr","Start",0x00010001,0
+HKLM,"SYSTEM\CurrentControlSet\Services\mountmgr","ErrorControl",0x00010001,1
+HKLM,"SYSTEM\CurrentControlSet\Services\mountmgr","Group",0x00000000,"System Bus Extender"
+HKLM,"SYSTEM\CurrentControlSet\Services\mountmgr","ImagePath",0x00020000,"system32\drivers\mountmgr.sys"

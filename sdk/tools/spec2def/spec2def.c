@@ -1003,6 +1003,14 @@ OutputLine_def(FILE *fileDest, EXPORT *pexp)
             fprintf(fileDest, " DATA");
     }
 
+    if ((giArch == ARCH_ARM) && !gbImportLib &&
+        (pexp->nCallingConvention != CC_EXTERN) && pexp->strTarget.buf &&
+        ScanToken(pexp->strTarget.buf, '.'))
+    {
+        /* LLD must not set the Thumb bit on a forwarder string RVA. */
+        fprintf(fileDest, " DATA");
+    }
+
     fprintf(fileDest, "\n");
 
     return 1;
@@ -1147,7 +1155,7 @@ ParseFile(char* pcStart, unsigned *cExports)
     pexports = malloc(cLines * sizeof(EXPORT));
     if (pexports == NULL)
     {
-        fprintf(stderr, "ERROR: %s: failed to allocate EXPORT array of %u elements\n", pszSourceFileName, cLines);
+        fprintf(stderr, "ERROR: %s: failed to allocate EXPORT array of %d elements\n", pszSourceFileName, cLines);
         return NULL;
     }
 
@@ -1700,7 +1708,7 @@ ApplyOrdinals(EXPORT* pexports, unsigned cExports)
         {
             if (used[pexports[i].nOrdinal] != 0)
             {
-                fprintf(stderr, "Found duplicate ordinal: %u\n", pexports[i].nOrdinal);
+                fprintf(stderr, "Found duplicate ordinal: %d\n", pexports[i].nOrdinal);
                 free(used);
                 return -1;
             }

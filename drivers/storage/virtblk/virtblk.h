@@ -9,6 +9,7 @@
 #include <ntddk.h>
 #include <ntdddisk.h>
 #include <ntddstor.h>
+#include <mountdev.h>
 #include <ntstrsafe.h>
 
 #define VB_TAG 'klbV'
@@ -36,6 +37,7 @@ typedef struct _VB_CONTROLLER
     KSPIN_LOCK Lock;
     HANDLE Directory;
     ULONG Number;
+    ULONG Signature;
     ULONG Version;
     ULONG Features;
     USHORT Available;
@@ -51,6 +53,8 @@ typedef struct _VB_EXTENSION
     ULONG Partition;
     UCHAR Type;
     BOOLEAN Boot;
+    USHORT NameLength;
+    WCHAR Name[96];
 } VB_EXTENSION;
 
 PVOID VbPlatformMap(ULONG Index);

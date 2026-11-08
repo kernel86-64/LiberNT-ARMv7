@@ -2,9 +2,11 @@
 
 The current milestone boots the real ARM32 kernel through EDK II and FreeLoader
 on QEMU `virt`, with a Cortex-A15, one CPU and 512 MiB of RAM. The kernel reaches
-`KiSystemStartup`, NVS initialization, native VirtIO/FAT disk access and the
-first user-mode `smss.exe` entry after `ExitBootServices`. The `user` fixture
-passes through ntdll initialization and `NtContinue` into `NtProcessStartup`.
+`KiSystemStartup`, NVS initialization, native VirtIO/FAT disk access, SMSS boot
+environment initialization, Win32k loading and CSRSS server initialization.
+The `session` fixture stops at the SMSS boot-environment milestone. Continuing
+it reaches Winsrv, whose first Win32 service currently fails with
+`STATUS_INVALID_SYSTEM_SERVICE`; ARM GUI-thread conversion is unfinished.
 This remains an NT 10.0 port in progress, not a complete operating-system boot.
 
 ## Build and boot tests
@@ -24,7 +26,9 @@ ARM32 selects the FreeLoader UEFI implementation because the separate
 ARM32 BIOS target in this configuration. The historical `Windows2003` entry
 type uses the compiled `_WIN32_WINNT` value, which is 0x0a00 in this build.
 
-The test harness needs `qemu-system-arm`, `mkfs.vfat`, and mtools.
+The test harness needs `qemu-system-arm`, `mkfs.vfat`, and mtools. The `user`
+and `session` fixtures also use `llvm-readobj` to collect server DLL import
+dependencies from the existing Ninja build outputs.
 The `clock` stage also uses a GDB build with ARM support. Its default
 firmware is `/usr/share/qemu/edk2-arm-code.fd`, with the corresponding
 `edk2-arm-vars.fd` beside it. Override the code path with `--firmware`.
@@ -71,6 +75,8 @@ supports these boot stages:
   bindings and a continuation fixture; the real user boot separately exercises
   ntdll initialization and `NtContinue`. Service exception hooks retain the
   saved nonvolatile frame and restore the previous mode and trap link.
+  PL011 receive tests compile the production debugger transport against register
+  fixtures and check empty FIFO, received bytes and receive errors.
 - `loader`: the actual FreeLoader initializes firmware services, mounts FAT32,
   reads `freeldr.ini`, and parses the selected entry. No kernel is supplied on
   the fixture. Passing this stage does not mean that kernel startup works.
@@ -94,12 +100,15 @@ supports these boot stages:
 - `user`: includes ntdll and smss, requires the storage regression to pass,
   and stops after the native `NtProcessStartup` entry. This proves first user
   entry, not complete Session Manager initialization.
+- `session`: requires the storage, volume-identity, CPU registry and fast-mutex
+  export regressions, then stops after SMSS initializes KnownDlls and its dynamic
+  environment. Success does not claim completed CSRSS or Win32 initialization.
 
 Use `--stage abi`, `--stage loader`, `--stage kernel`, `--stage clock`,
-`--stage storage` or `--stage user` to select one boot. Add `--virtio-modern`
+`--stage storage`, `--stage user` or `--stage session` to select one boot. Add `--virtio-modern`
 to test VirtIO MMIO version 2; the default QEMU transport is version 1.
 The default `both` runs the ABI and loader stages. Kernel, clock, storage and
-user stages leave the successful guest stopped for inspection. The harness
+user/session stages leave the successful guest stopped for inspection. The harness
 resets the same firmware variables file before each run so a stale BootOrder
 cannot target the previous superfloppy layout after switching to MBR. Use GDB's `monitor quit` before
 reusing the image. Each boot is headless,
@@ -289,8 +298,8 @@ compilation for amd64, ARM64 and RISC-V64.
 noncached contiguous DMA buffers, bounded completion polling, explicit memory
 barriers and FLUSH requests. The QEMU platform scan is isolated in its own
 file. Initial disk publication supports primary MBR partitions; GPT, extended
-partitions, FDT discovery, asynchronous IRQ completion and full PnP/mount-manager
-integration remain gaps. Unsupported dump/storage controls return failure.
+partitions, FDT discovery, asynchronous IRQ completion and full PnP integration
+remain gaps. Unsupported dump/storage controls return failure.
 
 A boot filesystem that already has Start=0 is now reused and marked critical
 rather than appended a second time. This fixes the observed FastFAT driver-name
@@ -305,12 +314,48 @@ uses the existing no-rollback architecture policy. Syscall exit checks the
 stored original APC environment, not the contextual enum used when creating
 an APC.
 
-Both legacy and modern MMIO boots passed the FAT regression. The user fixture
-reaches the actual smss native entry; continuing the minimal image reaches
-`SmpLoadDataFromRegistry` and currently terminates with `0xc000021a`, carrying
-`STATUS_OBJECT_NAME_NOT_FOUND`, because the Session Manager configuration is
-not populated. The implicit activation-context setup also reports a missing
-path. This is not a working desktop or complete Session Manager startup.
+Both legacy and modern MMIO boots passed the FAT regression. Mount Manager
+assigns the boot volume's drive letter through the documented legacy-volume
+arrival notification. Virtblk returns its counted device name and an opaque
+persistent MBR identity made from the disk signature and partition byte offset.
+Kernel tests cover short output buffers, the device name, identity, the CPU
+registry identifier and the ARM fast-mutex exports' IRQL transitions.
+
+The `session` fixture adds Session Manager registry configuration, the server
+DLL import closure and required NLS files. SMSS opens KnownDlls, runs Autochk
+on `C:`, and creates its dynamic environment. ARM's machine-dependent registry
+initialization publishes each processor's saved MIDR through the existing
+configuration-manager node builder. This identifier is descriptive LiberNT
+scaffolding, not a claim about an undocumented Windows ARM32 string format.
+
+Win32k and its font/HID dependencies load. CSRSS loads Basesrv and Winsrv;
+Winsrv's first `NtUserInitialize` returns `STATUS_INVALID_SYSTEM_SERVICE`.
+ARM's service dispatcher still lacks GUI-thread conversion and its kernel-stack
+switch entry remains a stub. Paging-file creation also remains unsuccessful in
+this minimal image. This milestone does not claim initialized CSRSS or a desktop.
+
+LLD sets the Thumb bit on ARM function forwarder RVAs, corrupting forwarder
+strings at even addresses. Spec2def marks these export-directory entries as
+data while preserving function import-library declarations. The linked-PE
+regression reproduces the corrupted strings before the fix and checks complete
+forwarder names and Thumb code addresses afterward:
+
+```sh
+python3 modules/rostests/tests/spec2def/test-arm-forwarders.py \
+    output-Clang-arm-debug/host-tools/bin/spec2def \
+    ~/.local/opt/rosbe/llvm/bin/clang ~/.local/opt/rosbe/llvm/bin/llvm-readobj
+python3 scripts/test-arm-uefi.py --stage session
+```
+
+Contracts come from Microsoft's [Mount Manager requests](https://learn.microsoft.com/en-us/windows-hardware/drivers/storage/supporting-mount-manager-requests-in-a-storage-class-driver),
+[volume-arrival notification](https://learn.microsoft.com/en-us/windows-hardware/drivers/ddi/mountmgr/ni-mountmgr-ioctl_mountmgr_volume_arrival_notification)
+and [PE export format](https://learn.microsoft.com/en-us/windows/win32/debug/pe-format).
+PL011 register behavior follows the [Arm PL011 reference manual](https://documentation-service.arm.com/static/5e8e3655fd977155116a9042).
+The firmware/platform tests have no Windows 11 ARM32 baseline.
+ARM C static analysis still stops on the existing `crtdefs.h` `errno_t` parser
+error. Host Spec2def analysis completes without findings. The older Spec2def
+snapshot suite also reports differences with the unmodified host generator;
+it is not counted as passing.
 
 The changed common `cmboot.c` and native entry code additionally pass syntax
 compilation for amd64, ARM64 and RISC-V64. No Windows binaries were inspected

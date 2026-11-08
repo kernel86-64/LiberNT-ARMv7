@@ -1965,6 +1965,10 @@ SmpCreateDynamicEnvironmentVariables(VOID)
             ValueData = L"AMD64";
             break;
 
+        case PROCESSOR_ARCHITECTURE_ARM:
+            ValueData = L"ARM";
+            break;
+
         case PROCESSOR_ARCHITECTURE_IA64:
             ValueData = L"IA64";
             break;
@@ -2640,6 +2644,7 @@ SmpLoadDataFromRegistry(OUT PUNICODE_STRING InitialCommand)
         return Status;
     }
 
+    DPRINT1("SMSS: Boot environment initialized\n");
     Status = SmpLoadSubSystemsForSystemSession(&SmpWindowsSubSysProcessId);
     if (!NT_SUCCESS(Status))
     {
