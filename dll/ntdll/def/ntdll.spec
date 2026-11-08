@@ -1382,9 +1382,8 @@
 @ stdcall RtlUpperChar(long)
 @ stdcall RtlUpperString(ptr ptr)
 @ stdcall -version=0x502 RtlUsageHeap(ptr long ptr)
-@ stdcall -stub -version=0x600+ -arch=arm RtlUserThreadStart(long long)
 @ stdcall -version=0x600+ -arch=i386,arm64 RtlUserThreadStart(long long)
-@ stdcall -version=0x600+ -arch=x86_64,riscv64,ppc RtlUserThreadStart(ptr ptr) RtlpUserThreadStart
+@ stdcall -version=0x600+ -arch=arm,x86_64,riscv64,ppc RtlUserThreadStart(ptr ptr) RtlpUserThreadStart
 @ stdcall RtlValidAcl(ptr)
 @ stdcall RtlValidRelativeSecurityDescriptor(ptr long long)
 @ stdcall RtlValidSecurityDescriptor(ptr)

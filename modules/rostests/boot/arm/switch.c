@@ -15,12 +15,15 @@ static volatile ULONG SwitchSteps, SwitchResumes, SwitchFailures;
 KTHREAD ArmSwitchMainThread;
 
 extern BOOLEAN ArmTestSwitchRegisters(VOID);
+VOID KiArmSetThreadTeb(PKTHREAD Thread);
 extern VOID KiArmInitializeSwitchFrame(PVOID, PKSYSTEM_ROUTINE,
                                        PKSTART_ROUTINE, PVOID, PCONTEXT);
 
 BOOLEAN KiArmSwapContextResume(KIRQL WaitIrql, PKTHREAD Old, PKTHREAD New)
 {
     ++SwitchResumes;
+    KiArmSetThreadTeb(New);
+    if ((PVOID)NtCurrentTeb() != New->Teb) ++SwitchFailures;
     if (New != SwitchPcr.Prcb.CurrentThread ||
         (Old != &SwitchWorker && Old != &ArmSwitchMainThread) ||
         (New != &SwitchWorker && New != &ArmSwitchMainThread) || Old == New)
@@ -71,7 +74,7 @@ static VOID NTAPI SwitchWorkerSystem(PKSTART_ROUTINE Entry, PVOID Parameter)
 
 BOOLEAN ArmTestKernelSwitch(VOID)
 {
-    ULONG Pcr, Cpsr;
+    ULONG Pcr, Cpsr, Teb;
     BOOLEAN Passed = TRUE;
     ULONG Index;
     SIZE_T FrameSize = sizeof(KSWITCH_FRAME) + sizeof(KEXCEPTION_FRAME) + sizeof(KARM_VFP_STATE);
@@ -80,6 +83,8 @@ BOOLEAN ArmTestKernelSwitch(VOID)
     RtlZeroMemory(&SwitchWorker, sizeof(SwitchWorker));
     RtlZeroMemory(&ArmSwitchMainThread, sizeof(ArmSwitchMainThread));
     SwitchSteps = SwitchResumes = SwitchFailures = 0;
+    SwitchWorker.Teb = (PVOID)SwitchStack;
+    ArmSwitchMainThread.Teb = (PVOID)&SwitchOldProcess;
     SwitchPcr.CurrentPrcb = &SwitchPcr.Prcb;
     SwitchWorker.InitialStack = SwitchStack + sizeof(SwitchStack);
     SwitchWorker.KernelStack = (PUCHAR)SwitchWorker.InitialStack - FrameSize;
@@ -87,6 +92,7 @@ BOOLEAN ArmTestKernelSwitch(VOID)
                                SwitchWorkerStart, &SwitchWorker, NULL);
     __asm__ __volatile__("mrs %0, cpsr\n\tcpsid if" : "=r"(Cpsr) :: "memory");
     __asm__ __volatile__("mrc p15, 0, %0, c13, c0, 4" : "=r"(Pcr));
+    __asm__ __volatile__("mrc p15, 0, %0, c13, c0, 2" : "=r"(Teb));
     __asm__ __volatile__("mcr p15, 0, %0, c13, c0, 4\n\tisb" :: "r"(&SwitchPcr) : "memory");
     SwitchPcr.Prcb.GroupSetMember = 1;
     SwitchOldProcess.DirectoryTableBase = SwitchNewProcess.DirectoryTableBase = PAGE_SIZE;
@@ -102,8 +108,10 @@ BOOLEAN ArmTestKernelSwitch(VOID)
     {
         SwitchPcr.Prcb.CurrentThread = &SwitchWorker;
         Passed = ArmTestSwitchRegisters() && Passed;
+        if ((PVOID)NtCurrentTeb() != ArmSwitchMainThread.Teb) Passed = FALSE;
     }
     __asm__ __volatile__("cpsid if\n\tmcr p15, 0, %0, c13, c0, 4\n\tisb" :: "r"(Pcr) : "memory");
+    __asm__ __volatile__("mcr p15, 0, %0, c13, c0, 2\n\tisb" :: "r"(Teb) : "memory");
     __asm__ __volatile__("msr cpsr_c, %0" :: "r"(Cpsr) : "memory");
     return Passed && SwitchSteps == 2 && SwitchResumes == 4 && SwitchFailures == 0;
 }

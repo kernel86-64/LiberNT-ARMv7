@@ -57,11 +57,11 @@ PsArchInitializeUserThreadContext(
 {
     RtlZeroMemory(Context, sizeof(*Context));
     Context->ContextFlags = CONTEXT_FULL;
-    Context->Pc = (ULONG)ThreadStart;
+    Context->Pc = (ULONG)ThreadStart | 1;
     Context->R0 = (ULONG)StartRoutine;
     Context->R1 = (ULONG)Argument;
     Context->Sp = (ULONG)StackBase;
-    Context->Cpsr = 0x10;
+    Context->Cpsr = CPSRM_USER | CPSRC_THUMB;
 }
 
 NTSTATUS

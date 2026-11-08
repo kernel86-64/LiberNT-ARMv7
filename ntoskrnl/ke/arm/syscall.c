@@ -121,7 +121,7 @@ KiSystemService(PKTHREAD Thread, PKTRAP_FRAME TrapFrame, ULONG Instruction)
     _disable();
     if (Mode == UserMode && KeGetCurrentIrql() != PASSIVE_LEVEL)
         KeBugCheckEx(IRQL_GT_ZERO_AT_SYSTEM_SERVICE, (ULONG_PTR)SystemCall, KeGetCurrentIrql(), 0, 0);
-    if (Mode == UserMode && (Thread->ApcStateIndex != CurrentApcEnvironment || Thread->CombinedApcDisable))
+    if (Mode == UserMode && (Thread->ApcStateIndex != OriginalApcEnvironment || Thread->CombinedApcDisable))
         KeBugCheckEx(APC_INDEX_MISMATCH, (ULONG_PTR)SystemCall, Thread->ApcStateIndex, Thread->CombinedApcDisable, 0);
 }
 

@@ -394,6 +394,8 @@ elseif(ARCH STREQUAL "arm")
         ${REACTOS_SOURCE_DIR}/ntoskrnl/ke/arm/cpu.c
         ${REACTOS_SOURCE_DIR}/ntoskrnl/ke/arm/control.c
         ${REACTOS_SOURCE_DIR}/ntoskrnl/ke/arm/exp.c
+        ${REACTOS_SOURCE_DIR}/ntoskrnl/ke/arm/context.c
+        ${REACTOS_SOURCE_DIR}/ntoskrnl/ke/arm/apc.c
         ${REACTOS_SOURCE_DIR}/ntoskrnl/ke/arm/interrupt.c
         ${REACTOS_SOURCE_DIR}/ntoskrnl/ke/arm/kiinit.c
         ${REACTOS_SOURCE_DIR}/ntoskrnl/ke/arm/process.c

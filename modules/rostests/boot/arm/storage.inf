@@ -1,0 +1,24 @@
+; PROJECT:     LiberNT boot tests
+; LICENSE:     GPL-3.0-or-later
+; PURPOSE:     VirtIO boot storage services for the ARM QEMU fixture
+; COPYRIGHT:   Copyright 2026 LiberNT contributors
+
+[Version]
+Signature = "$Windows NT$"
+
+[AddReg]
+HKLM,"SYSTEM\CurrentControlSet\Services\virtblk","Type",0x00010001,1
+HKLM,"SYSTEM\CurrentControlSet\Services\virtblk","Start",0x00010001,0
+HKLM,"SYSTEM\CurrentControlSet\Services\virtblk","ErrorControl",0x00010001,1
+HKLM,"SYSTEM\CurrentControlSet\Services\virtblk","Group",0x00000000,"Boot Bus Extender"
+HKLM,"SYSTEM\CurrentControlSet\Services\virtblk","ImagePath",0x00000000,"system32\drivers\virtblk.sys"
+HKLM,"SYSTEM\CurrentControlSet\Services\fastfat","Type",0x00010001,2
+HKLM,"SYSTEM\CurrentControlSet\Services\fastfat","Start",0x00010001,0
+HKLM,"SYSTEM\CurrentControlSet\Services\fastfat","ErrorControl",0x00010001,1
+HKLM,"SYSTEM\CurrentControlSet\Services\fastfat","Group",0x00000000,"Boot File System"
+HKLM,"SYSTEM\CurrentControlSet\Services\fastfat","ImagePath",0x00000000,"system32\drivers\fastfat.sys"
+HKLM,"SYSTEM\CurrentControlSet\Services\arm_storage_test","Type",0x00010001,1
+HKLM,"SYSTEM\CurrentControlSet\Services\arm_storage_test","Start",0x00010001,0
+HKLM,"SYSTEM\CurrentControlSet\Services\arm_storage_test","ErrorControl",0x00010001,1
+HKLM,"SYSTEM\CurrentControlSet\Services\arm_storage_test","Group",0x00000000,"Boot File System"
+HKLM,"SYSTEM\CurrentControlSet\Services\arm_storage_test","ImagePath",0x00000000,"system32\drivers\arm_storage_test.sys"

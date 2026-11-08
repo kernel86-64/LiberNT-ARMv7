@@ -56,6 +56,7 @@ elseif(ARCH STREQUAL "arm")
     list(APPEND UEFILDR_COMMON_ASM_SOURCE
         arch/uefi/arm/uefiasm.S
         arch/uefi/arm/paging.S
+        ${REACTOS_SOURCE_DIR}/modules/rostests/boot/arm/apc_impl.S
         arch/uefi/arm/entry.S)
 elseif(ARCH STREQUAL "arm64")
     list(APPEND UEFILDR_ARC_SOURCE
@@ -305,6 +306,10 @@ if(ARCH STREQUAL "arm" AND CMAKE_C_COMPILER_ID STREQUAL "Clang")
         ${REACTOS_SOURCE_DIR}/sdk/lib/rtl/arm/reloc.c
         ${REACTOS_SOURCE_DIR}/modules/rostests/boot/arm/registers.S
         ${REACTOS_SOURCE_DIR}/modules/rostests/boot/arm/unwind.c
+        ${REACTOS_SOURCE_DIR}/modules/rostests/boot/arm/context.c
+        ${REACTOS_SOURCE_DIR}/modules/rostests/boot/arm/apc.c
+        ${REACTOS_SOURCE_DIR}/ntoskrnl/ke/arm/apc.c
+        ${REACTOS_SOURCE_DIR}/ntoskrnl/ke/arm/context.c
         ${REACTOS_SOURCE_DIR}/modules/rostests/boot/arm/control.c
         ${REACTOS_SOURCE_DIR}/modules/rostests/boot/arm/kernel.c
         ${REACTOS_SOURCE_DIR}/modules/rostests/boot/arm/traps.c
@@ -317,6 +322,7 @@ if(ARCH STREQUAL "arm" AND CMAKE_C_COMPILER_ID STREQUAL "Clang")
         ${REACTOS_SOURCE_DIR}/sdk/lib/rtl/arm/unwind.c
         ${REACTOS_SOURCE_DIR}/sdk/lib/rtl/arm/debug_asm.S
         ${REACTOS_SOURCE_DIR}/ntoskrnl/ex/arm/ioport.s
+        ${REACTOS_SOURCE_DIR}/modules/rostests/boot/arm/apc_impl.S
         arch/uefi/arm/entry.S)
     set_source_files_properties(
         ${REACTOS_SOURCE_DIR}/modules/rostests/boot/arm/syscall.c
@@ -324,6 +330,10 @@ if(ARCH STREQUAL "arm" AND CMAKE_C_COMPILER_ID STREQUAL "Clang")
         ${REACTOS_SOURCE_DIR}/modules/rostests/boot/arm/debugsvc.c
         ${REACTOS_SOURCE_DIR}/ntoskrnl/ke/arm/control.c
         ${REACTOS_SOURCE_DIR}/ntoskrnl/ke/arm/debugsvc.c
+        ${REACTOS_SOURCE_DIR}/modules/rostests/boot/arm/context.c
+        ${REACTOS_SOURCE_DIR}/modules/rostests/boot/arm/apc.c
+        ${REACTOS_SOURCE_DIR}/ntoskrnl/ke/arm/apc.c
+        ${REACTOS_SOURCE_DIR}/ntoskrnl/ke/arm/context.c
         ${REACTOS_SOURCE_DIR}/modules/rostests/boot/arm/control.c
         ${REACTOS_SOURCE_DIR}/modules/rostests/boot/arm/kernel.c
         ${REACTOS_SOURCE_DIR}/modules/rostests/boot/arm/traps.c
@@ -351,4 +361,12 @@ if(ARCH STREQUAL "arm" AND CMAKE_C_COMPILER_ID STREQUAL "Clang")
         COMMAND ${ARM_UEFI_PYTHON} ${REACTOS_SOURCE_DIR}/sdk/tools/arm_uefi.py $<TARGET_FILE:arm_uefi_test>
         VERBATIM)
     set_property(TARGET arm_uefi_test APPEND PROPERTY LINK_DEPENDS ${REACTOS_SOURCE_DIR}/sdk/tools/arm_uefi.py)
+endif()
+
+if(ARCH STREQUAL "arm" AND SARCH STREQUAL "virt")
+    add_library(arm_storage_test MODULE ${REACTOS_SOURCE_DIR}/modules/rostests/boot/arm/storage_test.c)
+    set_source_files_properties(${REACTOS_SOURCE_DIR}/modules/rostests/boot/arm/storage_test.c
+        PROPERTIES COMPILE_OPTIONS "-U_BLDR_;-U_NTHAL_")
+    set_module_type(arm_storage_test kernelmodedriver)
+    add_importlibs(arm_storage_test ntoskrnl hal)
 endif()

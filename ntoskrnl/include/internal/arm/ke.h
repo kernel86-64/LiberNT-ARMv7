@@ -1,6 +1,7 @@
 #pragma once
 
 #define KI_ARCH_THREAD_HANDOFF_USES_RUNNING 1
+#define KI_USER_SLIST_POP_NO_ROLLBACK
 #define KI_EMULATED_USER_MACHINE 0
 #define KI_EMULATED_USER_SYSTEM_DLL NULL
 
@@ -196,11 +197,12 @@ KiEnterServiceException(
     _In_opt_ PKEXCEPTION_FRAME ExceptionFrame,
     _Out_ PKI_SERVICE_EXCEPTION_STATE State)
 {
+    UNREFERENCED_PARAMETER(Thread);
     UNREFERENCED_PARAMETER(Context);
     UNREFERENCED_PARAMETER(PreviousMode);
+    UNREFERENCED_PARAMETER(ExceptionFrame);
     UNREFERENCED_PARAMETER(State);
-    Thread->TrapFrame = KiGetLinkedTrapFrame(TrapFrame);
-    return ExceptionFrame;
+    return (PKEXCEPTION_FRAME)TrapFrame - 1;
 }
 
 FORCEINLINE
@@ -221,8 +223,8 @@ KiLeaveServiceException(
     _In_ PKTHREAD Thread,
     _In_ PKTRAP_FRAME TrapFrame)
 {
-    UNREFERENCED_PARAMETER(Thread);
-    UNREFERENCED_PARAMETER(TrapFrame);
+    Thread->PreviousMode = TrapFrame->PreviousMode;
+    Thread->TrapFrame = KiGetLinkedTrapFrame(TrapFrame);
 }
 
 #define KiGetPreviousMode(tf) \

@@ -1,0 +1,4 @@
+add_library(virtblk MODULE virtblk.c qemu_virt.c)
+set_module_type(virtblk kernelmodedriver)
+add_importlibs(virtblk ntoskrnl hal)
+add_cd_file(TARGET virtblk DESTINATION reactos/system32/drivers NO_CAB FOR all)

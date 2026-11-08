@@ -10,3 +10,7 @@ add_subdirectory(mountmgr)
 add_subdirectory(partmgr)
 add_subdirectory(port)
 add_subdirectory(ramdrv)
+
+if(ARCH STREQUAL "arm" AND SARCH STREQUAL "virt")
+    add_subdirectory(virtblk)
+endif()

@@ -30,6 +30,7 @@ typedef struct _KUINIT_FRAME
 } KUINIT_FRAME, *PKUINIT_FRAME;
 
 VOID NTAPI KiThreadStartup(VOID);
+VOID KiArmSetThreadTeb(PKTHREAD Thread);
 
 VOID
 KiArmInitializeSwitchFrame(PVOID Frame, PKSYSTEM_ROUTINE SystemRoutine,
@@ -144,7 +145,6 @@ BOOLEAN
 KiArmSwapContextResume(KIRQL WaitIrql, PKTHREAD OldThread, PKTHREAD NewThread)
 {
     PKPRCB Prcb = KeGetCurrentPrcb();
-    ULONG_PTR Teb = (ULONG_PTR)NewThread->Teb;
 
     KiChargeThreadCycleTime(Prcb, OldThread);
     NewThread->ContextSwitches++;
@@ -154,7 +154,7 @@ KiArmSwapContextResume(KIRQL WaitIrql, PKTHREAD OldThread, PKTHREAD NewThread)
                      (ULONG_PTR)NewThread, (ULONG_PTR)OldThread->InitialStack, 0);
     if (NewThread->ApcState.Process != OldThread->ApcState.Process)
         KiSwapProcess(NewThread->ApcState.Process, OldThread->ApcState.Process);
-    __asm__ __volatile__("mcr p15, 0, %0, c13, c0, 3\n\tisb" :: "r"(Teb) : "memory");
+    KiArmSetThreadTeb(NewThread);
     _enable();
     KiCompleteThreadSwitch(OldThread, NewThread);
     _disable();

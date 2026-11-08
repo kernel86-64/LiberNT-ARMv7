@@ -28,3 +28,9 @@ VOID NTAPI KiSwapProcess(PKPROCESS NewProcess, PKPROCESS OldProcess)
     }
     InterlockedAnd((volatile LONG *)&OldProcess->ActiveProcessors, ~Member);
 }
+
+VOID KiArmSetThreadTeb(PKTHREAD Thread)
+{
+    ULONG_PTR Teb = (ULONG_PTR)Thread->Teb;
+    __asm__ __volatile__("mcr p15, 0, %0, c13, c0, 2\n\tisb" :: "r"(Teb) : "memory");
+}

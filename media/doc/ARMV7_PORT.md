@@ -2,8 +2,10 @@
 
 The current milestone boots the real ARM32 kernel through EDK II and FreeLoader
 on QEMU `virt`, with a Cortex-A15, one CPU and 512 MiB of RAM. The kernel reaches
-`KiSystemStartup`, `KiInitializeSystem` and NVS phase 0 after `ExitBootServices`.
-This remains an NT 10.0 port in progress; native user space is not booted.
+`KiSystemStartup`, NVS initialization, native VirtIO/FAT disk access and the
+first user-mode `smss.exe` entry after `ExitBootServices`. The `user` fixture
+passes through ntdll initialization and `NtContinue` into `NtProcessStartup`.
+This remains an NT 10.0 port in progress, not a complete operating-system boot.
 
 ## Build and boot tests
 
@@ -57,9 +59,18 @@ supports these boot stages:
   production kernel stubs and dispatcher cover 0, 4, 7 and 17 arguments,
   caller LR preservation, restoration of `PreviousMode`, return values and
   an out-of-range service ID. The fixture rejects unexpected user probing
-  or exception unwinding; it does not validate user-stack faults. Processor
+  or exception unwinding; it does not validate user-stack faults. A direct
+  user-mode dispatch frame additionally verifies the original APC environment
+  and restoration of the caller mode. Processor
   control-state tests read the real CPU ID and MMU control registers, modify
   TPIDRURW, restore it, and compare the supported debugger register snapshot.
+  Thread-switch checks now verify SDK `NtCurrentTeb` across both stacks.
+  Production context conversions preserve all 32 VFP registers, apply the
+  supplied context-field mask and sanitize user CPSR privilege/state bits.
+  The actual ntdll APC dispatcher and loader thunk run with checked argument
+  bindings and a continuation fixture; the real user boot separately exercises
+  ntdll initialization and `NtContinue`. Service exception hooks retain the
+  saved nonvolatile frame and restore the previous mode and trap link.
 - `loader`: the actual FreeLoader initializes firmware services, mounts FAT32,
   reads `freeldr.ini`, and parses the selected entry. No kernel is supplied on
   the fixture. Passing this stage does not mean that kernel startup works.
@@ -76,10 +87,21 @@ supports these boot stages:
   (`0x7b`, `STATUS_OBJECT_NAME_NOT_FOUND`) because the fixture has no kernel
   storage drivers. This is a clock/startup regression, not a successful OS boot.
 
-Use `--stage abi`, `--stage loader`, `--stage kernel` or `--stage clock`
-to select one boot.
-The default `both` runs the ABI and loader stages. `kernel` and `clock` leave the
-successful guest stopped for inspection. Use GDB's `monitor quit` before
+- `storage`: builds an MBR/FAT32 fixture with the native `virtblk` and FastFAT
+  boot drivers. A test driver opens a 4096-byte file through the real FAT
+  stack, checks its contents, writes a changed pattern, flushes, rereads and
+  restores it. It does not use firmware block I/O after kernel entry.
+- `user`: includes ntdll and smss, requires the storage regression to pass,
+  and stops after the native `NtProcessStartup` entry. This proves first user
+  entry, not complete Session Manager initialization.
+
+Use `--stage abi`, `--stage loader`, `--stage kernel`, `--stage clock`,
+`--stage storage` or `--stage user` to select one boot. Add `--virtio-modern`
+to test VirtIO MMIO version 2; the default QEMU transport is version 1.
+The default `both` runs the ABI and loader stages. Kernel, clock, storage and
+user stages leave the successful guest stopped for inspection. The harness
+resets the same firmware variables file before each run so a stale BootOrder
+cannot target the previous superfloppy layout after switching to MBR. Use GDB's `monitor quit` before
 reusing the image. Each boot is headless,
 network-isolated, limited to 30 seconds and a six-second serial-log stall.
 Results are written to `arm-uefi-results.json`; `arm-boot.log` holds the latest
@@ -138,6 +160,16 @@ against NT 5.2 while generating an NT 10.0 image.
 - Microsoft's [ARM undefined instruction conventions](https://devblogs.microsoft.com/oldnewthing/20210618-00/?p=105324)
   identify Thumb `0xdefe` as `__debugbreak`. The kernel distinguishes it from
   the existing private `0xdefd` runtime debug service.
+- [VirtIO 1.2](https://docs.oasis-open.org/virtio/virtio/v1.2/virtio-v1.2.html),
+  sections 2.7, 3.1, 4.2 and 5.2, defines the split queues, MMIO transport,
+  feature/status negotiation and block requests used by `virtblk`.
+  [QEMU's memory map](https://github.com/qemu/qemu/blob/master/hw/arm/virt.c)
+  and [platform declarations](https://github.com/qemu/qemu/blob/master/include/hw/arm/virt.h)
+  specify the initial 32 slots at 0x0a000000 with a 0x200 stride.
+- Microsoft's published SDK `winnt.h` defines ARM `NtCurrentTeb` through
+  `CP15_TPIDRURW`, and its PE specification defines ARMNT (0x1c4) as Thumb-2.
+  The DDK image header now supplies that canonical constant alongside its
+  existing ARMV7 alias; the native-image selector uses ARMNT rather than ARM.
 - [QEMU virt documentation](https://www.qemu.org/docs/master/system/arm/virt.html)
   describes the virtual platform. Hardware discovery and the kernel HAL must
   ultimately consume its device tree rather than reuse OMAP assumptions.
@@ -239,17 +271,51 @@ and execution retrying into later PnP initialization. Full user-fault delivery
 and exception unwinding remain unvalidated. Debugger snapshots preserve the
 supported debug registers, thread-pointer registers and FPEXC; banked exception
 registers, full PMU capture and complete processor-freeze restoration remain gaps.
-Full SEH dispatch, bugcheck processor-state capture, user-mode exception
-restoration and the complete ntdll startup path remain unfinished. The fixture
-must gain a real NT boot storage path before firmware-independent disk access
-or the first native user process can be validated. Firmware VirtIO Block I/O
-is not an NT storage driver.
+All SEH paths, full bugcheck processor-state capture, user-mode exception
+restoration and the Win32 callback path remain unfinished. The native VirtIO boot path now validates firmware-independent disk access
+and first user entry; it is a bootstrap legacy disk driver rather than a full
+PnP storage stack. Full Session Manager setup and Win32 startup remain outside
+the minimal image.
 
 Cppcheck was run with the ARM build's compile database on 54 changed C/C++
 files present in that database. It reports a parser error in the existing
 `crtdefs.h` `errno_t` declaration; this is not a clean static-analysis result.
 The shared `RtlPcToFileHeader` crash-path change additionally passes syntax
 compilation for amd64, ARM64 and RISC-V64.
+
+## Native storage and user entry
+
+`virtblk` supports MMIO versions 1 and 2 with a single serialized split queue,
+noncached contiguous DMA buffers, bounded completion polling, explicit memory
+barriers and FLUSH requests. The QEMU platform scan is isolated in its own
+file. Initial disk publication supports primary MBR partitions; GPT, extended
+partitions, FDT discovery, asynchronous IRQ completion and full PnP/mount-manager
+integration remain gaps. Unsupported dump/storage controls return failure.
+
+A boot filesystem that already has Start=0 is now reused and marked critical
+rather than appended a second time. This fixes the observed FastFAT driver-name
+collision. The storage fixture deliberately keeps Start=0 to retain the
+regression trigger.
+
+The ARM native runtime no longer contains the old unconditional startup spin.
+The loader APC enters its dispatcher through PC, supplies the saved context to
+`LdrpInit`, and restores user execution through `NtContinue`. ARM's C SList pop
+uses its own SEH retry and has no assembler rollback exports; ARM therefore
+uses the existing no-rollback architecture policy. Syscall exit checks the
+stored original APC environment, not the contextual enum used when creating
+an APC.
+
+Both legacy and modern MMIO boots passed the FAT regression. The user fixture
+reaches the actual smss native entry; continuing the minimal image reaches
+`SmpLoadDataFromRegistry` and currently terminates with `0xc000021a`, carrying
+`STATUS_OBJECT_NAME_NOT_FOUND`, because the Session Manager configuration is
+not populated. The implicit activation-context setup also reports a missing
+path. This is not a working desktop or complete Session Manager startup.
+
+The changed common `cmboot.c` and native entry code additionally pass syntax
+compilation for amd64, ARM64 and RISC-V64. No Windows binaries were inspected
+for this milestone; headers, published specifications and existing LiberNT
+consumers supply the ABI scaffolding.
 
 The latest compiler evidence is in `output-Clang-arm-debug/arm-build.log`,
 and the reusable guest log is `output-Clang-arm-debug/arm-boot.log`.

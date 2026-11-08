@@ -14,6 +14,7 @@ static KTHREAD SvcThread;
 static KSERVICE_TABLE_DESCRIPTOR SvcTable[SSDT_MAX_ENTRIES];
 static BOOLEAN SvcActive;
 static ULONG SvcFailures;
+static KPROCESSOR_MODE SvcExpectedMode;
 
 VOID KiArmInstallVectors(VOID);
 VOID ArmTestRealSvcHandler(PKTRAP_FRAME Trap);
@@ -62,7 +63,7 @@ BOOLEAN ArmTestDispatchSvc(PKTRAP_FRAME Trap)
 
 static NTSTATUS ServiceZero(VOID)
 {
-    if (SvcThread.PreviousMode != KernelMode || !SvcThread.TrapFrame)
+    if (SvcThread.PreviousMode != SvcExpectedMode || !SvcThread.TrapFrame)
         ++SvcFailures;
     return 42;
 }
@@ -98,6 +99,7 @@ BOOLEAN ArmTestSystemCalls(VOID)
                             (ULONG_PTR)ServiceSeven, (ULONG_PTR)ServiceSeventeen};
     UCHAR Sizes[] = {0, 16, 28, 68};
     BOOLEAN Passed = TRUE;
+    KTRAP_FRAME UserTrap = {0};
 
     RtlZeroMemory(&SvcPcr, sizeof(SvcPcr));
     RtlZeroMemory(&SvcThread, sizeof(SvcThread));
@@ -110,6 +112,7 @@ BOOLEAN ArmTestSystemCalls(VOID)
     SvcPcr.Prcb.CurrentThread = &SvcThread;
     SvcPcr.CurrentPrcb = &SvcPcr.Prcb;
     SvcFailures = 0;
+    SvcExpectedMode = KernelMode;
     __asm__ __volatile__("mrs %0, cpsr\n\tcpsid if" : "=r"(Cpsr) :: "memory");
     __asm__ __volatile__("mrc p15, 0, %0, c1, c0, 0" : "=r"(Sctlr));
     __asm__ __volatile__("mrc p15, 0, %0, c12, c0, 0" : "=r"(Vbar));
@@ -126,12 +129,20 @@ BOOLEAN ArmTestSystemCalls(VOID)
     Passed = ZwArmTestSeventeen(1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17) == 153 && Passed;
     Passed = ZwArmTestInvalid() == STATUS_INVALID_SYSTEM_SERVICE && Passed;
     SvcActive = FALSE;
+    UserTrap.Cpsr = CPSRM_USER | CPSRC_THUMB;
+    SvcExpectedMode = UserMode;
+    SvcThread.PreviousMode = KernelMode;
+    SvcThread.ApcStateIndex = OriginalApcEnvironment;
+    ArmTestRealSvcHandler(&UserTrap);
+    if (UserTrap.R0 != 42 || SvcThread.PreviousMode != KernelMode || SvcThread.TrapFrame)
+        Passed = FALSE;
+    SvcThread.PreviousMode = UserMode;
     __asm__ __volatile__("cpsid if" ::: "memory");
     __asm__ __volatile__("mcr p15, 0, %0, c13, c0, 4\n\tisb" :: "r"(Pcr) : "memory");
     __asm__ __volatile__("dsb sy\n\tmcr p15, 0, %0, c12, c0, 0\n\tmcr p15, 0, %1, c1, c0, 0\n\tisb"
                          :: "r"(Vbar), "r"(Sctlr) : "memory");
     *Pmr = Mask;
     __asm__ __volatile__("dsb sy\n\tisb\n\tmsr cpsr_c, %0" :: "r"(Cpsr) : "memory");
-    return Passed && SvcFailures == 0 && SvcPcr.Prcb.KeSystemCalls == 5 &&
+    return Passed && SvcFailures == 0 && SvcPcr.Prcb.KeSystemCalls == 6 &&
            SvcThread.PreviousMode == UserMode && SvcThread.TrapFrame == NULL;
 }

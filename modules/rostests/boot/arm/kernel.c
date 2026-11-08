@@ -7,6 +7,8 @@
 
 #include <ntoskrnl/include/ntoskrnl.h>
 
+C_ASSERT(IMAGE_FILE_MACHINE_NATIVE == 0x01C4);
+
 static KPRCB Prcb;
 
 BOOLEAN ArmTestKernelFaultDecoding(void)

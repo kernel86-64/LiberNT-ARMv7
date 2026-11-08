@@ -273,14 +273,11 @@ CmpFindTagIndex(
     return -2;
 }
 
-#ifdef _BLDR_
 
 /**
  * @brief
  * Checks whether the specified named driver is already in the driver list.
  * Optionally returns its corresponding driver node.
- *
- * @remarks Used in bootloader only.
  *
  * @param[in]   DriverListHead
  * The driver list.
@@ -331,7 +328,6 @@ CmpIsDriverInList(
     return FALSE;
 }
 
-#endif /* _BLDR_ */
 
 /**
  * @brief
@@ -837,23 +833,28 @@ CmpFindDrivers(
             CMTRACE(CM_BOOT_DEBUG, "Adding Boot FileSystem '%S'\n",
                     BootFileSystem);
 
-            /* Always add it to the list */
-            if (!CmpAddDriverToList(Hive,
-                                    DriverCell,
-                                    GroupOrderCell,
-                                    &KeyPath,
-                                    DriverListHead))
+            if (CmpIsDriverInList(DriverListHead, &Name, &FsNode))
             {
-                CMTRACE(CM_BOOT_DEBUG, "  Failed to add boot driver\n");
+                RemoveEntryList(&FsNode->ListEntry.Link);
+                InsertHeadList(DriverListHead, &FsNode->ListEntry.Link);
             }
-            else
+            else if (CmpAddDriverToList(Hive,
+                                       DriverCell,
+                                       GroupOrderCell,
+                                       &KeyPath,
+                                       DriverListHead))
             {
-                /* Mark it as critical so it always loads */
                 FsNode = CONTAINING_RECORD(DriverListHead->Flink,
                                            BOOT_DRIVER_NODE,
                                            ListEntry.Link);
-                FsNode->ErrorControl = SERVICE_ERROR_CRITICAL;
             }
+            else
+            {
+                FsNode = NULL;
+                CMTRACE(CM_BOOT_DEBUG, "  Failed to add boot driver\n");
+            }
+            if (FsNode)
+                FsNode->ErrorControl = SERVICE_ERROR_CRITICAL;
         }
     }
 

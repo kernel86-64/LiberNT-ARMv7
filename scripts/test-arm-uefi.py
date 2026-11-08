@@ -13,6 +13,7 @@ from pathlib import Path
 import shutil
 import socket
 import subprocess
+import struct
 import time
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -61,34 +62,48 @@ def clock_snapshot(qmp):
     raise RuntimeError('could not read the ARM shared clock counters')
 
 
-def boot(build, firmware, stage, lock):
+def boot(build, firmware, stage, lock, modern=False):
     image = build / 'arm-uefi-tests.img'
     variables = build / 'QEMU_VARS.fd'
     log = build / 'arm-boot.log'
     qmp = build / 'arm-qemu.qmp'
     application = 'arm_uefi_test' if stage == 'abi' else 'uefildr'
     binary = build / 'boot/freeldr/freeldr' / (application + '.efi')
-    if not variables.exists():
-        shutil.copyfile(firmware.with_name('edk2-arm-vars.fd'), variables)
+    shutil.copyfile(firmware.with_name('edk2-arm-vars.fd'), variables)
     with image.open('wb') as output:
         output.truncate(128 * 1024 * 1024)
-    run('mkfs.vfat', '-F', '32', image, stdout=subprocess.DEVNULL)
-    run('mmd', '-i', image, '::/EFI', '::/EFI/BOOT')
-    run('mcopy', '-i', image, binary, '::/EFI/BOOT/BOOTARM.EFI')
+    fat_image = image
+    if stage in ['storage', 'user']:
+        mbr = bytearray(512)
+        struct.pack_into('<I', mbr, 440, 0x4C4E5441)
+        struct.pack_into('<BBBBBBBBII', mbr, 446, 0x80, 0xFE, 0xFF, 0xFF,
+                         0x0C, 0xFE, 0xFF, 0xFF, 2048, 128 * 2048 - 2048)
+        mbr[510:512] = b'\x55\xaa'
+        with image.open('r+b') as output:
+            output.write(mbr)
+        run('mkfs.vfat', '-F', '32', '--offset=2048', '-h', '2048', image,
+            stdout=subprocess.DEVNULL)
+        fat_image = str(image) + '@@1048576'
+    else:
+        run('mkfs.vfat', '-F', '32', image, stdout=subprocess.DEVNULL)
+    run('mmd', '-i', fat_image, '::/EFI', '::/EFI/BOOT')
+    run('mcopy', '-i', fat_image, binary, '::/EFI/BOOT/BOOTARM.EFI')
     config = build / 'freeldr.ini'
     config.write_text(
         '[FREELOADER]\nTimeOut=0\nDefaultOS=LiberNT\nDebug=COM1\n\n'
         '[Operating Systems]\nLiberNT="LiberNT ARMv7"\n\n'
         '[LiberNT]\nBootType=Windows2003\n'
-        'SystemPath=multi(0)disk(0)rdisk(0)partition(0)\\reactos\n'
+        f'SystemPath=multi(0)disk(0)rdisk(0)partition({1 if stage in ["storage", "user"] else 0})\\reactos\n'
         'Options=/DEBUG /DEBUGPORT=COM1 /BAUDRATE=115200\n')
-    run('mcopy', '-i', image, config, '::/freeldr.ini')
-    if stage in ['kernel', 'clock']:
+    run('mcopy', '-i', fat_image, config, '::/freeldr.ini')
+    if stage in ['kernel', 'clock', 'storage', 'user']:
         payload = build / 'arm-kernel-payload'
         payload.mkdir(exist_ok=True)
         run(build / 'host-tools/bin/mkhive', '-h:SYSTEM', f'-d:{payload}',
-            ROOT / 'modules/rostests/boot/arm/system.inf', stdout=subprocess.DEVNULL)
-        run('mmd', '-i', image, '::/reactos', '::/reactos/system32',
+            ROOT / 'modules/rostests/boot/arm/system.inf',
+            *([ROOT / 'modules/rostests/boot/arm/storage.inf'] if stage in ['storage', 'user'] else []),
+            stdout=subprocess.DEVNULL)
+        run('mmd', '-i', fat_image, '::/reactos', '::/reactos/system32',
             '::/reactos/system32/config')
         for source, name in [
             (build / 'ntoskrnl/ntoskrnl.exe', 'ntoskrnl.exe'),
@@ -100,8 +115,20 @@ def boot(build, firmware, stage, lock):
             (build / 'media/nls/c_437.nls', 'c_437.nls'),
             (ROOT / 'media/nls/l_intl.nls', 'l_intl.nls'),
         ]:
-            run('mcopy', '-i', image, source, f'::/reactos/system32/{name}')
-        run('mcopy', '-i', image, payload / 'system', '::/reactos/system32/config/system')
+            run('mcopy', '-i', fat_image, source, f'::/reactos/system32/{name}')
+        run('mcopy', '-i', fat_image, payload / 'system', '::/reactos/system32/config/system')
+    if stage in ['storage', 'user']:
+        for source in ['dll/ntdll/ntdll.dll', 'base/system/smss/smss.exe']:
+            run('mcopy', '-i', fat_image, build / source, '::/reactos/system32/' + Path(source).name)
+        run('mmd', '-i', fat_image, '::/reactos/system32/drivers')
+        for source in ['drivers/storage/virtblk/virtblk.sys',
+                       'drivers/filesystems/fastfat/fastfat.sys',
+                       'boot/freeldr/freeldr/arm_storage_test.sys']:
+            run('mcopy', '-i', fat_image, build / source,
+                '::/reactos/system32/drivers/' + Path(source).name)
+        data = build / 'arm-kernel-payload/storage-test.bin'
+        data.write_bytes(bytes((index * 37 + 11) & 255 for index in range(4096)))
+        run('mcopy', '-i', fat_image, data, '::/reactos/storage-test.bin')
     command = [
         'qemu-system-arm', '-machine', 'virt', '-cpu', 'cortex-a15',
         '-m', '512', '-smp', '1', '-display', 'none', '-monitor', 'none',
@@ -112,6 +139,8 @@ def boot(build, firmware, stage, lock):
         '-device', 'virtio-blk-device,drive=os', '-device', 'ramfb',
         '-gdb', 'tcp:127.0.0.1:1234',
         '-qmp', f'unix:{qmp},server=on,wait=off']
+    if modern:
+        command.extend(['-global', 'virtio-mmio.force-legacy=false'])
     keep = False
     started = last_change = time.monotonic()
     previous_size = 0
@@ -134,6 +163,18 @@ def boot(build, firmware, stage, lock):
                     raise RuntimeError(
                         f'{stage}: guest stopped for debugging (PID {process.pid}); '
                         f'gdb target remote 127.0.0.1:1234; log: {log}')
+                if stage == 'storage' and 'ARM storage tests: PASS' in text:
+                    stop_guest(qmp)
+                    keep = True
+                    break
+                if stage == 'user' and 'NtProcessStartup(' in text and ') called' in text:
+                    stop_guest(qmp)
+                    keep = True
+                    break
+                if stage in ['storage', 'user'] and '*** Fatal System Error:' in text:
+                    stop_guest(qmp)
+                    keep = True
+                    raise RuntimeError('storage: kernel stopped before the FAT I/O regression passed')
                 if stage == 'clock' and '*** Fatal System Error:' in text:
                     stop_guest(qmp)
                     keep = True
@@ -154,7 +195,7 @@ def boot(build, firmware, stage, lock):
                     guest_command(qmp, 'cont')
                     keep = False
                 if now - started >= 30 or now - last_change >= 6:
-                    if stage in ['abi', 'kernel', 'clock'] and 'ARMv7 ABI tests: PASS' not in text:
+                    if stage in ['abi', 'kernel', 'clock', 'storage', 'user'] and 'ARMv7 ABI tests: PASS' not in text:
                         stop_guest(qmp)
                         keep = True
                         raise RuntimeError(
@@ -164,10 +205,14 @@ def boot(build, firmware, stage, lock):
             text = log.read_text(errors='replace')
             if stage == 'abi':
                 passed = 'ARMv7 ABI tests: PASS' in text and 'tests: FAIL' not in text
-            elif stage in ['kernel', 'clock']:
+            elif stage in ['kernel', 'clock', 'storage', 'user']:
                 passed = all(marker in text for marker in [
                     'ARM kernel: KiInitializeSystem', 'Kernel address space:',
                     'Memory:', 'Boot images: ntoskrnl.exe'])
+                if stage in ['storage', 'user']:
+                    passed = passed and 'boot disk online' in text and 'ARM storage tests: PASS' in text and 'load failed' not in text
+                if stage == 'user':
+                    passed = passed and 'NtProcessStartup(' in text and ') called' in text
                 if stage == 'clock':
                     passed = passed and 'BOOT DRIVERS LOADED' in text and all(
                         marker in text for marker in ['*** Fatal System Error: 0x0000007b',
@@ -187,6 +232,9 @@ def boot(build, firmware, stage, lock):
                     process.kill()
                     process.wait()
     result = {'stage': stage, 'passed': True, 'seconds': round(time.monotonic() - started, 2)}
+    if stage in ['storage', 'user']:
+        result['transport'] = 'virtio-mmio-v2' if modern else 'virtio-mmio-v1'
+        result['milestone'] = 'native-smss-entry' if stage == 'user' else 'fat-file-io'
     if stage == 'clock':
         result.update(clock)
         result['expected_bugcheck'] = 'INACCESSIBLE_BOOT_DEVICE (empty storage fixture)'
@@ -197,8 +245,9 @@ def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--build-dir', type=Path, default=ROOT / 'output-Clang-arm-debug')
     parser.add_argument('--firmware', type=Path, default=Path('/usr/share/qemu/edk2-arm-code.fd'))
-    parser.add_argument('--stage', choices=['abi', 'loader', 'kernel', 'clock', 'both'], default='both')
+    parser.add_argument('--stage', choices=['abi', 'loader', 'kernel', 'clock', 'storage', 'user', 'both'], default='both')
     parser.add_argument('--no-build', action='store_true')
+    parser.add_argument('--virtio-modern', action='store_true')
     args = parser.parse_args()
     build = args.build_dir.resolve()
     cache = (build / 'CMakeCache.txt').read_text().splitlines()
@@ -212,7 +261,9 @@ def main():
         if not args.no_build:
             env = dict(os.environ, CCACHE_DISABLE='1')
             run('ninja', '-C', build, 'uefildr', 'arm_uefi_test', '-j8', env=env)
-            if args.stage in ['kernel', 'clock']:
+            if args.stage in ['storage', 'user']:
+                run('ninja', '-C', build, 'virtblk', 'fastfat', 'arm_storage_test', 'ntdll', 'smss', '-j8', env=env)
+            if args.stage in ['kernel', 'clock', 'storage', 'user']:
                 run('ninja', '-C', build, 'ntoskrnl', 'hal', 'kdcom', 'bootvid', 'lfbbvid',
                     'media/nls/c_1252.nls', 'media/nls/c_437.nls', '-j8', env=env)
         stages = ['abi', 'loader'] if args.stage == 'both' else [args.stage]
@@ -220,7 +271,7 @@ def main():
         try:
             for stage in stages:
                 try:
-                    result = boot(build, args.firmware.resolve(), stage, lock)
+                    result = boot(build, args.firmware.resolve(), stage, lock, args.virtio_modern)
                 except Exception as error:
                     results.append({'stage': stage, 'passed': False, 'error': str(error)})
                     raise
