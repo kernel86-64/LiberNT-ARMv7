@@ -4,9 +4,10 @@ The current milestone boots the real ARM32 kernel through EDK II and FreeLoader
 on QEMU `virt`, with a Cortex-A15, one CPU and 512 MiB of RAM. The kernel reaches
 `KiSystemStartup`, NVS initialization, native VirtIO/FAT disk access, SMSS boot
 environment initialization, Win32k loading and CSRSS server initialization.
-The `session` fixture stops at the SMSS boot-environment milestone. Continuing
-it reaches Winsrv, whose first Win32 service currently fails with
-`STATUS_INVALID_SYSTEM_SERVICE`; ARM GUI-thread conversion is unfinished.
+The `session` fixture stops at the SMSS boot-environment milestone; `csr`
+stops after the system-session CSRSS server initializes. Continuing creates
+Wininit and a second CSRSS; GDI then waits for a display adapter that the
+minimal image does not yet publish.
 This remains an NT 10.0 port in progress, not a complete operating-system boot.
 
 ## Build and boot tests
@@ -76,7 +77,11 @@ supports these boot stages:
   ntdll initialization and `NtContinue`. Service exception hooks retain the
   saved nonvolatile frame and restore the previous mode and trap link.
   PL011 receive tests compile the production debugger transport against register
-  fixtures and check empty FIFO, received bytes and receive errors.
+  fixtures and check empty FIFO, received bytes and receive errors. The kernel
+  stack test moves a live C frame chain to another stack and back, checking
+  locals, trap/exception/VFP links, user SP and interrupt masks. SVC tests cover
+  GUI conversion success/failure, allocation failure, repeated shadow-table
+  calls and the process mitigation that forbids Win32 services.
 - `loader`: the actual FreeLoader initializes firmware services, mounts FAT32,
   reads `freeldr.ini`, and parses the selected entry. No kernel is supplied on
   the fixture. Passing this stage does not mean that kernel startup works.
@@ -103,12 +108,16 @@ supports these boot stages:
 - `session`: requires the storage, volume-identity, CPU registry and fast-mutex
   export regressions, then stops after SMSS initializes KnownDlls and its dynamic
   environment. Success does not claim completed CSRSS or Win32 initialization.
+- `csr`: continues through the first Win32 system calls and requires the native
+  system-session CSRSS server to finish initialization and the display bridge
+  to publish an 800x600 scanout. Wininit and its import dependencies are
+  included. This does not claim a working desktop.
 
 Use `--stage abi`, `--stage loader`, `--stage kernel`, `--stage clock`,
-`--stage storage`, `--stage user` or `--stage session` to select one boot. Add `--virtio-modern`
+`--stage storage`, `--stage user`, `--stage session` or `--stage csr` to select one boot. Add `--virtio-modern`
 to test VirtIO MMIO version 2; the default QEMU transport is version 1.
 The default `both` runs the ABI and loader stages. Kernel, clock, storage and
-user/session stages leave the successful guest stopped for inspection. The harness
+user/session/csr stages leave the successful guest stopped for inspection. The harness
 resets the same firmware variables file before each run so a stale BootOrder
 cannot target the previous superfloppy layout after switching to MBR. Use GDB's `monitor quit` before
 reusing the image. Each boot is headless,
@@ -271,8 +280,12 @@ not been validated by the component EFI tests.
 Kernel DPC/APC software interrupts and same-root process switching now have
 implementations. Kernel service stubs preserve LR around same-mode SVC and
 copy stack arguments below that saved frame. The dispatcher uses R12 for the
-service ID and rejects IDs at or above the service-table limit. Full win32k
-service-thread conversion remains outside this bootstrap implementation. Runtime debug output uses the existing private ARM UDF
+service ID and rejects IDs at or above the service-table limit. First Win32
+user calls prepare a large kernel stack at the assembly SVC boundary, then
+invoke the existing GUI process/thread callouts and retry the shadow table.
+The stack handoff runs after the allocator returns and before the C service
+dispatcher starts, so no active dispatcher C frame retains an old-stack address.
+Runtime debug output uses the existing private ARM UDF
 service ABI with the fifth AAPCS argument taken from the interrupted stack.
 LPAE translation/access/permission aborts now enter NVS with the decoded
 read/write/execute access. QEMU verified a demand-zero fault being resolved
@@ -283,8 +296,8 @@ registers, full PMU capture and complete processor-freeze restoration remain gap
 All SEH paths, full bugcheck processor-state capture, user-mode exception
 restoration and the Win32 callback path remain unfinished. The native VirtIO boot path now validates firmware-independent disk access
 and first user entry; it is a bootstrap legacy disk driver rather than a full
-PnP storage stack. Full Session Manager setup and Win32 startup remain outside
-the minimal image.
+PnP storage stack. Interactive-session startup and display-device publication
+remain unfinished in the minimal image.
 
 Cppcheck was run with the ARM build's compile database on 54 changed C/C++
 files present in that database. It reports a parser error in the existing
@@ -328,11 +341,65 @@ initialization publishes each processor's saved MIDR through the existing
 configuration-manager node builder. This identifier is descriptive LiberNT
 scaffolding, not a claim about an undocumented Windows ARM32 string format.
 
-Win32k and its font/HID dependencies load. CSRSS loads Basesrv and Winsrv;
-Winsrv's first `NtUserInitialize` returns `STATUS_INVALID_SYSTEM_SERVICE`.
-ARM's service dispatcher still lacks GUI-thread conversion and its kernel-stack
-switch entry remains a stub. Paging-file creation also remains unsuccessful in
-this minimal image. This milestone does not claim initialized CSRSS or a desktop.
+Win32k and its font/HID dependencies load. The `csr` fixture also loads
+Dxgmms2, DxgKrnl, BasicDisplay and Framebuf, using the existing WDDM and
+software-adapter registry definitions. It supplies the base `DeviceClasses`
+key used by device-interface registration. BasicDisplay takes ownership of
+the UEFI framebuffer and publishes the display bridge with an 800x600 scanout.
+CSRSS loads Basesrv and Winsrv and finishes system-session initialization.
+A live process-list inspection found SMSS, two CSRSS processes and Wininit.
+Paging-file creation remains unsuccessful in this minimal image. This
+milestone proves adapter initialization, not a working desktop.
+The maintainer reports a later `0xC000021A` failure when allowing this image
+to continue. The `csr` stop point precedes that failure and is not a stability
+test; investigation of the subsequent critical-process exit remains open.
+
+ARM exports `HalSetBusDataByOffset` with the documented zero-byte result for
+unsupported buses; it does not claim PCI configuration support. The existing
+ARM cache-range implementation is now exported to graphics drivers.
+`KeFlushIoBuffers` maintains the first MDL's mapped range: writes clean data
+to the point of coherency; DMA reads invalidate complete cache lines and
+clean/invalidate partial lines; PIO reads clean/invalidate the range. Reads
+also invalidate instruction-cache lines. Cache geometry comes from CTR and
+completion uses DSB/ISB. Kernel tests exercise unaligned MDLs in both directions
+for DMA and PIO and check buffer contents. QEMU does not establish coherency
+on real hardware. Mapping exhaustion remains an explicit gap: the routine
+logs and returns when a system mapping cannot be allocated; Windows behavior
+for this case is `INFO_NEEDED`.
+
+The next graphics boot exposed a separate stack overflow: a timer interrupt
+ran a graphics DPC on the interrupted worker's nearly full 12 KiB stack.
+Live R11 frames led through `KiRetireDpcList` to DxgKrnl's retirement callback.
+The ARM dispatcher now retires DPCs on the resident `LoaderStartupDpcStack`
+already supplied by FreeLoader. The stack-switch fixture checks the actual SP,
+alignment, PRCB argument and return to the original stack. Its EFI run passes;
+the separate kernel boot then reaches display-bridge and CSRSS initialization.
+The updated `csr` checks pass with both VirtIO MMIO v1 and v2.
+
+The I/O-cache contract comes from Microsoft's
+[KeFlushIoBuffers documentation](https://learn.microsoft.com/en-us/windows-hardware/drivers/ddi/wdm/nf-wdm-keflushiobuffers),
+with processor operations from the
+[Armv7-A/R manual](https://documentation-service.arm.com/static/5f8daeb7f86e16515cdb8c4e).
+The bus-write result follows
+[HalSetBusDataByOffset](https://learn.microsoft.com/en-us/windows-hardware/drivers/ddi/ntddk/nf-ntddk-halsetbusdatabyoffset).
+Existing ARM PRCB fields and loader allocations are explicit LiberNT
+scaffolding; no Windows layout is inferred from the successful boot.
+
+The ARM stack handoff copies live stack contents with IRQ/FIQ masked, repairs
+the frame chain and trap/exception/VFP links, updates existing thread stack
+metadata, and frees the old small stack only after SP moves. User SP and user
+register values stay intact. Stack metadata is published before the handoff
+with an explicit barrier. GUI conversion runs on the new stack through the
+existing process/thread callbacks; failed conversion preserves its error.
+An existing unparenthesized `KiGetPreviousMode` macro prevented the preparation
+path from recognizing user mode in comparisons. The new allocator-selection
+regression failed before the macro fix and passed in a separate run afterward.
+The production stack switch and dispatcher also pass the EFI ABI fixture.
+
+The R11 frame-chain and eight-byte stack-alignment requirements come from
+Microsoft's [ARM ABI conventions](https://learn.microsoft.com/en-us/cpp/build/overview-of-arm-abi-conventions).
+The existing ARM32 thread fields remain LiberNT consumer scaffolding; this
+change adds no fields or claims of Windows ARM64 layout equivalence.
 
 LLD sets the Thumb bit on ARM function forwarder RVAs, corrupting forwarder
 strings at even addresses. Spec2def marks these export-directory entries as
@@ -344,7 +411,7 @@ forwarder names and Thumb code addresses afterward:
 python3 modules/rostests/tests/spec2def/test-arm-forwarders.py \
     output-Clang-arm-debug/host-tools/bin/spec2def \
     ~/.local/opt/rosbe/llvm/bin/clang ~/.local/opt/rosbe/llvm/bin/llvm-readobj
-python3 scripts/test-arm-uefi.py --stage session
+python3 scripts/test-arm-uefi.py --stage csr
 ```
 
 Contracts come from Microsoft's [Mount Manager requests](https://learn.microsoft.com/en-us/windows-hardware/drivers/storage/supporting-mount-manager-requests-in-a-storage-class-driver),

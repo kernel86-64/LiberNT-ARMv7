@@ -122,6 +122,54 @@ static NTSTATUS ArmFastMutexExports(VOID)
     return STATUS_SUCCESS;
 }
 
+static NTSTATUS ArmPlatformExports(VOID)
+{
+    UCHAR Buffer[130];
+    ULONG Index;
+
+    for (Index = 0; Index < sizeof(Buffer); ++Index) Buffer[Index] = (UCHAR)Index;
+    if (HalSetBusDataByOffset(MaximumBusDataType, 0, 0, Buffer, 1, sizeof(Buffer)) != 0)
+        return STATUS_DATA_ERROR;
+    KeInvalidateRangeAllCaches(NULL, 0);
+    KeInvalidateRangeAllCaches(Buffer + 1, sizeof(Buffer) - 2);
+    for (Index = 0; Index < sizeof(Buffer); ++Index)
+        if (Buffer[Index] != (UCHAR)Index) return STATUS_DATA_ERROR;
+    DbgPrint("ARM platform export tests: PASS (unsupported bus, unaligned cache range)\n");
+    return STATUS_SUCCESS;
+}
+
+static NTSTATUS ArmIoCacheExports(VOID)
+{
+    PUCHAR Buffer;
+    PMDL Mdl;
+    ULONG Index, Pass;
+    NTSTATUS Status = STATUS_SUCCESS;
+
+    Buffer = ExAllocatePoolWithTag(NonPagedPool, 2 * PAGE_SIZE, 'tcIA');
+    if (!Buffer) return STATUS_INSUFFICIENT_RESOURCES;
+    Mdl = IoAllocateMdl(Buffer + 1, PAGE_SIZE + 9, FALSE, FALSE, NULL);
+    if (!Mdl)
+    {
+        ExFreePoolWithTag(Buffer, 'tcIA');
+        return STATUS_INSUFFICIENT_RESOURCES;
+    }
+    MmBuildMdlForNonPagedPool(Mdl);
+    for (Pass = 0; Pass < 2; ++Pass)
+    {
+        for (Index = 0; Index < 2 * PAGE_SIZE; ++Index)
+            Buffer[Index] = (UCHAR)(Index * 37 + Pass);
+        KeFlushIoBuffers(Mdl, FALSE, (BOOLEAN)Pass);
+        KeFlushIoBuffers(Mdl, TRUE, (BOOLEAN)Pass);
+        for (Index = 0; Index < 2 * PAGE_SIZE; ++Index)
+            if (Buffer[Index] != (UCHAR)(Index * 37 + Pass)) Status = STATUS_DATA_ERROR;
+    }
+    IoFreeMdl(Mdl);
+    ExFreePoolWithTag(Buffer, 'tcIA');
+    if (NT_SUCCESS(Status))
+        DbgPrint("ARM I/O cache tests: PASS (unaligned MDL, DMA and PIO directions)\n");
+    return Status;
+}
+
 static VOID NTAPI ArmStorageReinitialize(PDRIVER_OBJECT Driver, PVOID Context, ULONG Count)
 {
     UNICODE_STRING Name = RTL_CONSTANT_STRING(L"\\Device\\Harddisk0\\Partition1\\reactos\\storage-test.bin");
@@ -140,6 +188,8 @@ static VOID NTAPI ArmStorageReinitialize(PDRIVER_OBJECT Driver, PVOID Context, U
     Status = ArmStorageIdentity();
     if (NT_SUCCESS(Status)) Status = ArmProcessorIdentity();
     if (NT_SUCCESS(Status)) Status = ArmFastMutexExports();
+    if (NT_SUCCESS(Status)) Status = ArmPlatformExports();
+    if (NT_SUCCESS(Status)) Status = ArmIoCacheExports();
     if (!NT_SUCCESS(Status))
     {
         DbgPrint("ARM storage tests: FAIL identity status=%08lx\n", Status);

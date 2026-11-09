@@ -228,7 +228,7 @@ KiLeaveServiceException(
 }
 
 #define KiGetPreviousMode(tf) \
-    ((tf->Cpsr & CPSRM_MASK) == CPSRM_USER) ? UserMode: KernelMode
+    ((((tf)->Cpsr & CPSRM_MASK) == CPSRM_USER) ? UserMode : KernelMode)
 
 #define KI_DPC_NORMAL_PROCESSING_REQUESTED 0x00000002L
 #define KI_DPC_NORMAL_DPC_PRESENT          0x00000010L
@@ -383,4 +383,5 @@ DECLSPEC_NORETURN VOID
 KiExceptionExit(PKTRAP_FRAME TrapFrame, PKEXCEPTION_FRAME ExceptionFrame);
 
 KIRQL NTAPI HalpArmGetInterruptIrql(ULONG Source);
+VOID NTAPI KiRetireDpcListInDpcStack(PKPRCB Prcb, PVOID DpcStack);
 BOOLEAN NTAPI HalpArmDispatchInterrupt(ULONG Source, PKTRAP_FRAME TrapFrame);

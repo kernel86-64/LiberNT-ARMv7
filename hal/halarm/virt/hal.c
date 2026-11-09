@@ -341,6 +341,13 @@ ULONG NTAPI HalGetBusDataByOffset(BUS_DATA_TYPE Type, ULONG Bus, ULONG Slot, PVO
     return 0;
 }
 
+ULONG NTAPI HalSetBusDataByOffset(BUS_DATA_TYPE Type, ULONG Bus, ULONG Slot, PVOID Buffer, ULONG Offset, ULONG Length)
+{
+    UNREFERENCED_PARAMETER(Type); UNREFERENCED_PARAMETER(Bus); UNREFERENCED_PARAMETER(Slot);
+    UNREFERENCED_PARAMETER(Buffer); UNREFERENCED_PARAMETER(Offset); UNREFERENCED_PARAMETER(Length);
+    return 0;
+}
+
 ULONG NTAPI HalGetInterruptVector(INTERFACE_TYPE Type, ULONG Bus, ULONG Level, ULONG Vector,
                                   PKIRQL Irql, PKAFFINITY Affinity)
 {

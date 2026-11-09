@@ -10,20 +10,60 @@
 #undef DbgPrint
 
 static DECLSPEC_ALIGN(PAGE_SIZE) KIPCR SvcPcr;
-static KTHREAD SvcThread;
-static KSERVICE_TABLE_DESCRIPTOR SvcTable[SSDT_MAX_ENTRIES];
+static ETHREAD SvcExecutiveThread;
+#define SvcThread SvcExecutiveThread.Tcb
+KSERVICE_TABLE_DESCRIPTOR KeServiceDescriptorTable[SSDT_MAX_ENTRIES];
+KSERVICE_TABLE_DESCRIPTOR KeServiceDescriptorTableShadow[SSDT_MAX_ENTRIES];
+#define SvcTable KeServiceDescriptorTable
+PKWIN32_PROCESS_CALLOUT PspW32ProcessCallout;
+static EPROCESS SvcProcess;
+static ULONG SvcConversions;
+static NTSTATUS SvcConversionStatus;
+static ULONG SvcStackAllocations;
 static BOOLEAN SvcActive;
 static ULONG SvcFailures;
 static KPROCESSOR_MODE SvcExpectedMode;
 
 VOID KiArmInstallVectors(VOID);
 VOID ArmTestRealSvcHandler(PKTRAP_FRAME Trap);
+PVOID KiArmAllocateGuiStack(PKTRAP_FRAME Trap);
 NTSTATUS NTAPI ZwArmTestZero(VOID);
 NTSTATUS NTAPI ZwArmTestFour(ULONG, ULONG, ULONG, ULONG);
 NTSTATUS NTAPI ZwArmTestSeven(ULONG, ULONG, ULONG, ULONG, ULONG, ULONG, ULONG);
 NTSTATUS NTAPI ZwArmTestSeventeen(ULONG, ULONG, ULONG, ULONG, ULONG, ULONG, ULONG, ULONG, ULONG,
                                  ULONG, ULONG, ULONG, ULONG, ULONG, ULONG, ULONG, ULONG);
 NTSTATUS NTAPI ZwArmTestInvalid(VOID);
+
+PVOID NTAPI MmCreateKernelStack(BOOLEAN Gui, UCHAR Node)
+{
+    UNREFERENCED_PARAMETER(Gui);
+    UNREFERENCED_PARAMETER(Node);
+    ++SvcStackAllocations;
+    return NULL;
+}
+
+VOID NTAPI MmDeleteKernelStack(PVOID Base, BOOLEAN Gui)
+{
+    UNREFERENCED_PARAMETER(Base);
+    UNREFERENCED_PARAMETER(Gui);
+    KeBugCheck(KMODE_EXCEPTION_NOT_HANDLED);
+}
+
+NTSTATUS NTAPI PsConvertToGuiThread(VOID)
+{
+    ++SvcConversions;
+    if (!SvcThread.LargeStack || SvcThread.PreviousMode != UserMode || !SvcThread.TrapFrame)
+        ++SvcFailures;
+    if (NT_SUCCESS(SvcConversionStatus)) SvcThread.ServiceTable = KeServiceDescriptorTableShadow;
+    return SvcConversionStatus;
+}
+
+static NTSTATUS NTAPI SvcProcessCallout(PEPROCESS Process, BOOLEAN Initialize)
+{
+    UNREFERENCED_PARAMETER(Process);
+    UNREFERENCED_PARAMETER(Initialize);
+    return STATUS_SUCCESS;
+}
 
 VOID NTAPI ProbeForRead(CONST VOID *Address, SIZE_T Length, ULONG Alignment)
 {
@@ -51,6 +91,15 @@ DECLSPEC_NORETURN VOID NTAPI KeBugCheckEx(ULONG Code, ULONG_PTR A, ULONG_PTR B, 
 {
     UNREFERENCED_PARAMETER(A); UNREFERENCED_PARAMETER(B); UNREFERENCED_PARAMETER(C); UNREFERENCED_PARAMETER(D);
     KeBugCheck(Code);
+}
+
+VOID NTAPI RtlAssert(PVOID Expression, PVOID File, ULONG Line, PCHAR Message)
+{
+    UNREFERENCED_PARAMETER(Expression);
+    UNREFERENCED_PARAMETER(File);
+    UNREFERENCED_PARAMETER(Line);
+    UNREFERENCED_PARAMETER(Message);
+    KeBugCheck(KMODE_EXCEPTION_NOT_HANDLED);
 }
 
 BOOLEAN ArmTestDispatchSvc(PKTRAP_FRAME Trap)
@@ -109,6 +158,7 @@ BOOLEAN ArmTestSystemCalls(VOID)
     SvcTable[0].Number = Sizes;
     SvcThread.ServiceTable = SvcTable;
     SvcThread.PreviousMode = UserMode;
+    SvcThread.ApcState.Process = &SvcProcess.Pcb;
     SvcPcr.Prcb.CurrentThread = &SvcThread;
     SvcPcr.CurrentPrcb = &SvcPcr.Prcb;
     SvcFailures = 0;
@@ -136,6 +186,31 @@ BOOLEAN ArmTestSystemCalls(VOID)
     ArmTestRealSvcHandler(&UserTrap);
     if (UserTrap.R0 != 42 || SvcThread.PreviousMode != KernelMode || SvcThread.TrapFrame)
         Passed = FALSE;
+    KeServiceDescriptorTableShadow[0] = SvcTable[0];
+    KeServiceDescriptorTableShadow[1] = SvcTable[0];
+    PspW32ProcessCallout = SvcProcessCallout;
+    UserTrap.R12 = 0x1000;
+    SvcConversionStatus = STATUS_SUCCESS;
+    SvcConversions = 0;
+    SvcStackAllocations = 0;
+    Passed = KiArmAllocateGuiStack(&UserTrap) == NULL && SvcStackAllocations == 1 && Passed;
+    ArmTestRealSvcHandler(&UserTrap);
+    Passed = Passed && UserTrap.R0 == STATUS_NO_MEMORY && SvcConversions == 0;
+    SvcThread.LargeStack = TRUE;
+    SvcConversionStatus = STATUS_ACCESS_DENIED;
+    ArmTestRealSvcHandler(&UserTrap);
+    Passed = Passed && UserTrap.R0 == STATUS_ACCESS_DENIED && SvcConversions == 1 &&
+             SvcThread.ServiceTable == SvcTable;
+    SvcConversionStatus = STATUS_SUCCESS;
+    SvcProcess.MitigationFlagsValues.DisallowWin32kSystemCalls = TRUE;
+    ArmTestRealSvcHandler(&UserTrap);
+    Passed = Passed && UserTrap.R0 == STATUS_INVALID_SYSTEM_SERVICE && SvcConversions == 1;
+    SvcProcess.MitigationFlagsValues.DisallowWin32kSystemCalls = FALSE;
+    ArmTestRealSvcHandler(&UserTrap);
+    Passed = Passed && UserTrap.R0 == 42 && SvcConversions == 2;
+    ArmTestRealSvcHandler(&UserTrap);
+    Passed = Passed && UserTrap.R0 == 42 && SvcConversions == 2;
+    PspW32ProcessCallout = NULL;
     SvcThread.PreviousMode = UserMode;
     __asm__ __volatile__("cpsid if" ::: "memory");
     __asm__ __volatile__("mcr p15, 0, %0, c13, c0, 4\n\tisb" :: "r"(Pcr) : "memory");
@@ -143,6 +218,6 @@ BOOLEAN ArmTestSystemCalls(VOID)
                          :: "r"(Vbar), "r"(Sctlr) : "memory");
     *Pmr = Mask;
     __asm__ __volatile__("dsb sy\n\tisb\n\tmsr cpsr_c, %0" :: "r"(Cpsr) : "memory");
-    return Passed && SvcFailures == 0 && SvcPcr.Prcb.KeSystemCalls == 6 &&
+    return Passed && SvcFailures == 0 && SvcPcr.Prcb.KeSystemCalls == 11 &&
            SvcThread.PreviousMode == UserMode && SvcThread.TrapFrame == NULL;
 }

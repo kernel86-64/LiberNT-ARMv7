@@ -12,6 +12,7 @@
 @ stdcall HalDisplayString(str)
 @ stdcall HalEnableSystemInterrupt(long long long)
 @ stdcall HalGetBusDataByOffset(long long long ptr long long)
+@ stdcall HalSetBusDataByOffset(long long long ptr long long)
 @ stdcall HalGetEnvironmentVariableEx(ptr ptr ptr ptr ptr)
 @ stdcall HalGetEnvironmentVariable(str long str)
 @ fastcall HalGetInterruptSource()

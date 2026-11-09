@@ -223,6 +223,7 @@ KiInitializePcr(IN ULONG ProcessorNumber,
     /* Set the stacks */
     Pcr->Prcb.PanicStackBase = (ULONG)PanicStack;
     Pcr->Prcb.IsrStack = InterruptStack;
+    Pcr->Prcb.DpcStack = InterruptStack;
 #if 0
     /* Setup the processor set */
     Pcr->Prcb.MultiThreadProcessorSet = Pcr->Prcb.GroupSetMember;

@@ -183,9 +183,7 @@ KiDispatchInterrupt(VOID)
         (Prcb->DeferredReadyListHead.Next))
     {
         /* Retire DPCs while under the DPC stack */
-        //KiRetireDpcListInDpcStack(Prcb, Prcb->DpcStack);
-        // FIXME!!! //
-        KiRetireDpcList(Prcb);
+        KiRetireDpcListInDpcStack(Prcb, Prcb->DpcStack);
     }
 
     /* Re-enable interrupts */

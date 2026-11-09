@@ -198,7 +198,44 @@ KeFlushIoBuffers(
     _In_ BOOLEAN ReadOperation,
     _In_ BOOLEAN DmaOperation)
 {
-    DbgBreakPoint();
+    ULONG Ctr, DLine, ILine;
+    ULONG_PTR Base, Address, Last;
+    PVOID Mapping;
+
+    if (Mdl == NULL || MmGetMdlByteCount(Mdl) == 0) return;
+    Mapping = MmGetSystemAddressForMdlSafe(Mdl, HighPagePriority);
+    if (Mapping == NULL)
+    {
+        /* TODO: maintain caches if an MDL system mapping cannot be allocated. */
+        DPRINT1("KeFlushIoBuffers: cannot map MDL %p\n", Mdl);
+        return;
+    }
+    Base = (ULONG_PTR)Mapping;
+    Last = Base + MmGetMdlByteCount(Mdl) - 1;
+    __asm__ __volatile__("mrc p15, 0, %0, c0, c0, 1" : "=r" (Ctr));
+    DLine = 4UL << ((Ctr >> 16) & 15);
+    ILine = 4UL << (Ctr & 15);
+    __asm__ __volatile__("dsb sy" ::: "memory");
+    for (Address = Base & ~(ULONG_PTR)(DLine - 1);; Address += DLine)
+    {
+        if (!ReadOperation)
+            __asm__ __volatile__("mcr p15, 0, %0, c7, c10, 1" :: "r" (Address) : "memory");
+        else if (DmaOperation && Address >= Base && Last - Address >= DLine - 1)
+            __asm__ __volatile__("mcr p15, 0, %0, c7, c6, 1" :: "r" (Address) : "memory");
+        else
+            __asm__ __volatile__("mcr p15, 0, %0, c7, c14, 1" :: "r" (Address) : "memory");
+        if (Last - Address < DLine) break;
+    }
+    __asm__ __volatile__("dsb sy" ::: "memory");
+    if (ReadOperation)
+    {
+        for (Address = Base & ~(ULONG_PTR)(ILine - 1);; Address += ILine)
+        {
+            __asm__ __volatile__("mcr p15, 0, %0, c7, c5, 1" :: "r" (Address) : "memory");
+            if (Last - Address < ILine) break;
+        }
+        __asm__ __volatile__("dsb sy\n\tisb" ::: "memory");
+    }
 }
 
 /* SYSTEM CALLS NOT VALID ON THIS CPU *****************************************/

@@ -120,6 +120,19 @@ KiSoftwareInterruptExceptionContext:
     nop.w
     .seh_custom 0xee, 0x02
     .seh_endprologue
+    ldr r0, [sp, #(ARM_TRAP_TR_OFFSET + TrCpsr)]
+    and r0, r0, #CPSRM_MASK
+    cmp r0, #CPSRM_USER
+    bne .Lsvc_frame_ready
+    mov.w r11, #0
+.Lsvc_frame_ready:
+    add.w r0, sp, #ARM_TRAP_TR_OFFSET
+    bl KiArmAllocateGuiStack
+    cbz r0, .Lsvc_stack_ready
+    sub.w r1, r0, #KERNEL_LARGE_STACK_COMMIT
+    bl KeSwitchKernelStack
+    bl KiArmReleaseGuiStack
+.Lsvc_stack_ready:
     add.w r0, sp, #ARM_TRAP_TR_OFFSET
     movs r1, #0
     bl KiSoftwareInterruptHandler

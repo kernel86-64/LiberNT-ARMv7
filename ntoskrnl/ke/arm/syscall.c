@@ -8,6 +8,8 @@
 
 #include <ntoskrnl/include/ntoskrnl.h>
 
+NTSTATUS NTAPI PsConvertToGuiThread(VOID);
+
 #define BUILD_SYSCALLS \
 SYSCALL(00, ()) \
 SYSCALL(01, (_1)) \
@@ -59,6 +61,37 @@ PKI_SYSCALL_PARAM_HANDLER KiSyscallHandlers[0x12] =
     KiSyscall11Param,
 };
 
+PVOID KiArmAllocateGuiStack(PKTRAP_FRAME TrapFrame)
+{
+    PKTHREAD Thread;
+    PVOID Stack;
+
+    if (KiGetPreviousMode(TrapFrame) != UserMode ||
+        (TrapFrame->R12 & ~(SERVICE_NUMBER_MASK | (SERVICE_TABLE_MASK << SERVICE_TABLE_SHIFT))) ||
+        ((TrapFrame->R12 >> SERVICE_TABLE_SHIFT) & SERVICE_TABLE_MASK) != SERVICE_TABLE_TEST)
+        return NULL;
+    Thread = KeGetCurrentThread();
+    if (Thread->LargeStack || Thread->ServiceTable != KeServiceDescriptorTable ||
+        !PspW32ProcessCallout || PsGetCurrentProcess()->MitigationFlagsValues.DisallowWin32kSystemCalls)
+        return NULL;
+    _enable();
+    Stack = MmCreateKernelStack(TRUE, 0);
+    _disable();
+    if (Stack)
+    {
+        TrapFrame->TrapFrame = (ULONG_PTR)Thread->TrapFrame;
+        Thread->TrapFrame = TrapFrame;
+    }
+    return Stack;
+}
+
+VOID KiArmReleaseGuiStack(PVOID Stack)
+{
+    _enable();
+    MmDeleteKernelStack(Stack, FALSE);
+    _disable();
+}
+
 
 VOID
 KiSystemService(PKTHREAD Thread, PKTRAP_FRAME TrapFrame, ULONG Instruction)
@@ -71,6 +104,7 @@ KiSystemService(PKTHREAD Thread, PKTRAP_FRAME TrapFrame, ULONG Instruction)
     PVOID Arguments[17];
     PVOID SystemCall;
     KPROCESSOR_MODE Mode = KiGetPreviousMode(TrapFrame);
+    NTSTATUS Status;
 
     UNREFERENCED_PARAMETER(Instruction);
     KeGetCurrentPrcb()->KeSystemCalls++;
@@ -79,7 +113,35 @@ KiSystemService(PKTHREAD Thread, PKTRAP_FRAME TrapFrame, ULONG Instruction)
         TrapFrame->R0 = STATUS_INVALID_SYSTEM_SERVICE;
         return;
     }
-    /* TODO: convert first-time win32k callers and retry the shadow service table. */
+    if (Offset == SERVICE_TABLE_TEST)
+    {
+        if (PsGetCurrentProcess()->MitigationFlagsValues.DisallowWin32kSystemCalls)
+        {
+            TrapFrame->R0 = STATUS_INVALID_SYSTEM_SERVICE;
+            return;
+        }
+        if (Thread->ServiceTable == KeServiceDescriptorTable)
+        {
+            if (Mode != UserMode || !PspW32ProcessCallout)
+            {
+                TrapFrame->R0 = STATUS_INVALID_SYSTEM_SERVICE;
+                return;
+            }
+            if (!Thread->LargeStack)
+            {
+                TrapFrame->R0 = STATUS_NO_MEMORY;
+                return;
+            }
+            _enable();
+            Status = PsConvertToGuiThread();
+            _disable();
+            if (!NT_SUCCESS(Status))
+            {
+                TrapFrame->R0 = Status;
+                return;
+            }
+        }
+    }
     Descriptor = (PVOID)((ULONG_PTR)Thread->ServiceTable + Offset);
     if (!Thread->ServiceTable || Number >= Descriptor->Limit || !Descriptor->Base || !Descriptor->Number)
     {
@@ -129,7 +191,7 @@ VOID
 KiSoftwareInterruptHandler(PKTRAP_FRAME TrapFrame)
 {
     PKTHREAD Thread = KeGetCurrentThread();
-    PKTRAP_FRAME OldTrap = Thread->TrapFrame;
+    PKTRAP_FRAME OldTrap = Thread->TrapFrame == TrapFrame ? (PVOID)TrapFrame->TrapFrame : Thread->TrapFrame;
     KPROCESSOR_MODE OldMode = Thread->PreviousMode;
 
     TrapFrame->TrapFrame = (ULONG_PTR)OldTrap;

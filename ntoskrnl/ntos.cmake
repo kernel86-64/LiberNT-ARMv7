@@ -386,6 +386,7 @@ elseif(ARCH STREQUAL "arm")
         ${REACTOS_SOURCE_DIR}/ntoskrnl/ke/arm/boot.s
         ${REACTOS_SOURCE_DIR}/ntoskrnl/nvs/arch/arm/bootpte.S
         ${REACTOS_SOURCE_DIR}/ntoskrnl/ke/arm/ctxswtch.s
+        ${REACTOS_SOURCE_DIR}/ntoskrnl/ke/arm/kstack.s
         ${REACTOS_SOURCE_DIR}/ntoskrnl/ke/arm/stubs_asm.s
         ${REACTOS_SOURCE_DIR}/ntoskrnl/ke/arm/trap.s)
     list(APPEND SOURCE
@@ -406,6 +407,7 @@ elseif(ARCH STREQUAL "arm")
         ${REACTOS_SOURCE_DIR}/ntoskrnl/ke/arm/atomics.c
         ${REACTOS_SOURCE_DIR}/ntoskrnl/ke/arm/thrdini.c
         ${REACTOS_SOURCE_DIR}/ntoskrnl/ke/arm/ctxframe.c
+        ${REACTOS_SOURCE_DIR}/ntoskrnl/ke/arm/kstack.c
         ${REACTOS_SOURCE_DIR}/ntoskrnl/ke/arm/trapc.c
         ${REACTOS_SOURCE_DIR}/ntoskrnl/ke/arm/trapframe.c
         ${REACTOS_SOURCE_DIR}/ntoskrnl/ke/arm/usercall.c

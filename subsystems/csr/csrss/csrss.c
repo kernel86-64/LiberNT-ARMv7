@@ -82,6 +82,10 @@ _main(int argc,
         DPRINT1("CSRSS: Unable to initialize server, Status: 0x%08lx\n", Status);
         NtTerminateProcess(NtCurrentProcess(), Status);
     }
+    else
+    {
+        DPRINT1("CSRSS: Server initialized\n");
+    }
 
     /* Disable errors */
     CsrpSetDefaultProcessHardErrorMode();

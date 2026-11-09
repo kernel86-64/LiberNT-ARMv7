@@ -2626,7 +2626,7 @@
 @ stdcall KeInitializeTriageDumpDataArray(ptr long)
 @ stdcall -arch=win64 KeInterlockedClearProcessorAffinityEx(ptr long)
 @ stdcall -arch=win64 KeInterlockedSetProcessorAffinityEx(ptr long)
-@ fastcall -arch=!arm KeInvalidateRangeAllCaches(ptr long)
+@ fastcall KeInvalidateRangeAllCaches(ptr long)
 @ stub -arch=arm64 KeInvalidateRangeAllCachesNoIpi
 @ stdcall -arch=win64 KeIsEmptyAffinityEx(ptr)
 @ stdcall -arch=win64 KeIsEqualAffinityEx(ptr ptr)

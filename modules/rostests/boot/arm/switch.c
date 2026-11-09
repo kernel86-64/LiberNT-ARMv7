@@ -11,8 +11,67 @@ static DECLSPEC_ALIGN(PAGE_SIZE) KIPCR SwitchPcr;
 static KPROCESS SwitchOldProcess, SwitchNewProcess;
 static KTHREAD SwitchWorker;
 static DECLSPEC_ALIGN(8) UCHAR SwitchStack[16384];
+static DECLSPEC_ALIGN(8) UCHAR SwitchLargeStack[16384];
 static volatile ULONG SwitchSteps, SwitchResumes, SwitchFailures;
 KTHREAD ArmSwitchMainThread;
+
+VOID NTAPI KiRetireDpcList(PKPRCB Prcb)
+{
+    ULONG_PTR Sp;
+
+    __asm__ __volatile__("mov %0, sp" : "=r"(Sp));
+    if (Prcb != &SwitchPcr.Prcb || Sp < (ULONG_PTR)SwitchLargeStack ||
+        Sp >= (ULONG_PTR)(SwitchLargeStack + sizeof(SwitchLargeStack)) || (Sp & 7))
+        ++SwitchFailures;
+    ++SwitchSteps;
+}
+
+static BOOLEAN SwitchKernelStack(VOID)
+{
+    struct
+    {
+        KEXCEPTION_FRAME Exception;
+        KTRAP_FRAME Trap;
+        KARM_VFP_STATE Vfp;
+    } Frame = {0};
+    KTRAP_FRAME Linked = {0};
+    KARM_VFP_STATE LinkedVfp = {0};
+    PVOID OldBase = SwitchWorker.StackBase;
+    ULONG_PTR OldLimit = SwitchWorker.StackLimit;
+    PVOID NewBase = SwitchLargeStack + sizeof(SwitchLargeStack);
+    ULONG Before, After, Sp;
+    volatile ULONG Marker = 0x12345678;
+    BOOLEAN Passed;
+
+    Frame.Exception.TrapFrame = (ULONG_PTR)&Frame.Trap;
+    Frame.Trap.Cpsr = CPSRM_USER | CPSRC_THUMB;
+    Frame.Trap.Sp = 0x12340000;
+    Frame.Trap.TrapFrame = (ULONG_PTR)&Linked;
+    Frame.Trap.VfpState = &Frame.Vfp;
+    Frame.Vfp.Link = &LinkedVfp;
+    Frame.Vfp.VfpD[31] = 0x1122334455667788ULL;
+    SwitchWorker.TrapFrame = &Frame.Trap;
+    __asm__ __volatile__("mrs %0, cpsr" : "=r"(Before));
+    Passed = KeSwitchKernelStack(NewBase, SwitchLargeStack) == OldBase;
+    __asm__ __volatile__("mrs %0, cpsr\n\tmov %1, sp" : "=r"(After), "=r"(Sp));
+    Passed = Passed && Marker == 0x12345678 && Sp >= (ULONG_PTR)SwitchLargeStack &&
+             Sp < (ULONG_PTR)NewBase && !((Before ^ After) & 0xC0) &&
+             SwitchWorker.StackBase == NewBase && SwitchWorker.LargeStack &&
+             SwitchWorker.TrapFrame == &Frame.Trap && Frame.Trap.VfpState == &Frame.Vfp &&
+             Frame.Vfp.Link == &LinkedVfp && Frame.Trap.TrapFrame == (ULONG_PTR)&Linked &&
+             Frame.Exception.TrapFrame == (ULONG_PTR)&Frame.Trap &&
+             Frame.Trap.Sp == 0x12340000 && Frame.Vfp.VfpD[31] == 0x1122334455667788ULL;
+    Passed = KeSwitchKernelStack(OldBase, (PVOID)OldLimit) == NewBase && Passed;
+    Passed = Passed && Marker == 0x12345678 && SwitchWorker.TrapFrame == &Frame.Trap &&
+             Frame.Trap.VfpState == &Frame.Vfp && Frame.Vfp.Link == &LinkedVfp &&
+             Frame.Exception.TrapFrame == (ULONG_PTR)&Frame.Trap;
+    SwitchWorker.LargeStack = FALSE;
+    SwitchWorker.TrapFrame = NULL;
+    KiRetireDpcListInDpcStack(&SwitchPcr.Prcb, NewBase);
+    __asm__ __volatile__("mov %0, sp" : "=r"(Sp));
+    Passed = Passed && Sp >= OldLimit && Sp < (ULONG_PTR)OldBase && Marker == 0x12345678;
+    return Passed;
+}
 
 extern BOOLEAN ArmTestSwitchRegisters(VOID);
 VOID KiArmSetThreadTeb(PKTHREAD Thread);
@@ -53,6 +112,7 @@ static DECLSPEC_NORETURN VOID NTAPI SwitchWorkerStart(PVOID Parameter)
     ULONG Low, High;
 
     if (Parameter != &SwitchWorker) ++SwitchFailures;
+    if (!SwitchKernelStack()) ++SwitchFailures;
     __asm__ __volatile__("vmov %0, %1, d8" : "=r"(Low), "=r"(High));
     if (Low || High) ++SwitchFailures;
     __asm__ __volatile__("vmov.f64 d8, #16.0" ::: "d8");
@@ -87,6 +147,8 @@ BOOLEAN ArmTestKernelSwitch(VOID)
     ArmSwitchMainThread.Teb = (PVOID)&SwitchOldProcess;
     SwitchPcr.CurrentPrcb = &SwitchPcr.Prcb;
     SwitchWorker.InitialStack = SwitchStack + sizeof(SwitchStack);
+    SwitchWorker.StackBase = SwitchWorker.InitialStack;
+    SwitchWorker.StackLimit = (ULONG_PTR)SwitchStack;
     SwitchWorker.KernelStack = (PUCHAR)SwitchWorker.InitialStack - FrameSize;
     KiArmInitializeSwitchFrame(SwitchWorker.KernelStack, SwitchWorkerSystem,
                                SwitchWorkerStart, &SwitchWorker, NULL);
@@ -113,5 +175,5 @@ BOOLEAN ArmTestKernelSwitch(VOID)
     __asm__ __volatile__("cpsid if\n\tmcr p15, 0, %0, c13, c0, 4\n\tisb" :: "r"(Pcr) : "memory");
     __asm__ __volatile__("mcr p15, 0, %0, c13, c0, 2\n\tisb" :: "r"(Teb) : "memory");
     __asm__ __volatile__("msr cpsr_c, %0" :: "r"(Cpsr) : "memory");
-    return Passed && SwitchSteps == 2 && SwitchResumes == 4 && SwitchFailures == 0;
+    return Passed && SwitchSteps == 3 && SwitchResumes == 4 && SwitchFailures == 0;
 }
