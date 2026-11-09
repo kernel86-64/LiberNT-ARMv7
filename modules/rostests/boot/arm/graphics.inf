@@ -8,7 +8,7 @@ Signature = "$Windows NT$"
 
 [AddReg]
 HKLM,"SYSTEM\CurrentControlSet\Control\DeviceClasses",,0x00000010
-HKLM,"SYSTEM\CurrentControlSet\Control\ServiceGroupOrder","List",0x00010000,"Boot Bus Extender","System Bus Extender","Boot File System","Video Init","Video"
+HKLM,"SYSTEM\CurrentControlSet\Control\ServiceGroupOrder","List",0x00010000,"Boot Bus Extender","System Bus Extender","Boot File System","File System","Base","Video Init","Video"
 HKLM,"SYSTEM\CurrentControlSet\Services\dxgmms2","Type",0x00010001,1
 HKLM,"SYSTEM\CurrentControlSet\Services\dxgmms2","Start",0x00010001,0
 HKLM,"SYSTEM\CurrentControlSet\Services\dxgmms2","ErrorControl",0x00010001,1

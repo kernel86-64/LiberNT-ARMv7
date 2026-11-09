@@ -20,6 +20,10 @@ static EPROCESS SvcProcess;
 static ULONG SvcConversions;
 static NTSTATUS SvcConversionStatus;
 static ULONG SvcStackAllocations;
+static TEB SvcTeb;
+static ULONG SvcFlushes;
+static BOOLEAN SvcExpectEmptyBatch;
+PGDI_BATCHFLUSH_ROUTINE KeGdiFlushUserBatch;
 static BOOLEAN SvcActive;
 static ULONG SvcFailures;
 static KPROCESSOR_MODE SvcExpectedMode;
@@ -33,6 +37,7 @@ NTSTATUS NTAPI ZwArmTestSeven(ULONG, ULONG, ULONG, ULONG, ULONG, ULONG, ULONG);
 NTSTATUS NTAPI ZwArmTestSeventeen(ULONG, ULONG, ULONG, ULONG, ULONG, ULONG, ULONG, ULONG, ULONG,
                                  ULONG, ULONG, ULONG, ULONG, ULONG, ULONG, ULONG, ULONG);
 NTSTATUS NTAPI ZwArmTestInvalid(VOID);
+BOOLEAN ArmTestCallbacks(PKTHREAD Thread);
 
 PVOID NTAPI MmCreateKernelStack(BOOLEAN Gui, UCHAR Node)
 {
@@ -114,7 +119,15 @@ static NTSTATUS ServiceZero(VOID)
 {
     if (SvcThread.PreviousMode != SvcExpectedMode || !SvcThread.TrapFrame)
         ++SvcFailures;
+    if (SvcExpectEmptyBatch && SvcTeb.GdiBatchCount) ++SvcFailures;
     return 42;
+}
+
+static NTSTATUS NTAPI SvcFlushBatch(VOID)
+{
+    ++SvcFlushes;
+    SvcTeb.GdiBatchCount = 0;
+    return STATUS_SUCCESS;
 }
 
 static NTSTATUS ServiceFour(ULONG A, ULONG B, ULONG C, ULONG D)
@@ -208,9 +221,24 @@ BOOLEAN ArmTestSystemCalls(VOID)
     SvcProcess.MitigationFlagsValues.DisallowWin32kSystemCalls = FALSE;
     ArmTestRealSvcHandler(&UserTrap);
     Passed = Passed && UserTrap.R0 == 42 && SvcConversions == 2;
+    SvcThread.Teb = &SvcTeb;
+    KeGdiFlushUserBatch = SvcFlushBatch;
+    SvcFlushes = 0;
+    SvcTeb.GdiBatchCount = 2;
+    SvcExpectEmptyBatch = TRUE;
     ArmTestRealSvcHandler(&UserTrap);
-    Passed = Passed && UserTrap.R0 == 42 && SvcConversions == 2;
+    Passed = Passed && UserTrap.R0 == 42 && SvcConversions == 2 &&
+             SvcFlushes == 1 && !SvcTeb.GdiBatchCount;
+    UserTrap.R12 = 0;
+    SvcExpectEmptyBatch = FALSE;
+    SvcTeb.GdiBatchCount = 1;
+    ArmTestRealSvcHandler(&UserTrap);
+    Passed = Passed && UserTrap.R0 == 42 && SvcFlushes == 1 && SvcTeb.GdiBatchCount == 1;
+    SvcTeb.GdiBatchCount = 0;
+    SvcThread.Teb = NULL;
+    KeGdiFlushUserBatch = NULL;
     PspW32ProcessCallout = NULL;
+    Passed = ArmTestCallbacks(&SvcThread) && Passed;
     SvcThread.PreviousMode = UserMode;
     __asm__ __volatile__("cpsid if" ::: "memory");
     __asm__ __volatile__("mcr p15, 0, %0, c13, c0, 4\n\tisb" :: "r"(Pcr) : "memory");
@@ -218,6 +246,6 @@ BOOLEAN ArmTestSystemCalls(VOID)
                          :: "r"(Vbar), "r"(Sctlr) : "memory");
     *Pmr = Mask;
     __asm__ __volatile__("dsb sy\n\tisb\n\tmsr cpsr_c, %0" :: "r"(Cpsr) : "memory");
-    return Passed && SvcFailures == 0 && SvcPcr.Prcb.KeSystemCalls == 11 &&
+    return Passed && SvcFailures == 0 && SvcPcr.Prcb.KeSystemCalls == 12 &&
            SvcThread.PreviousMode == UserMode && SvcThread.TrapFrame == NULL;
 }

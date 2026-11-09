@@ -299,6 +299,7 @@ if(ARCH STREQUAL "arm" AND CMAKE_C_COMPILER_ID STREQUAL "Clang")
         ${REACTOS_SOURCE_DIR}/modules/rostests/boot/arm/reloc.c
         ${REACTOS_SOURCE_DIR}/modules/rostests/boot/arm/debugsvc.c
         ${REACTOS_SOURCE_DIR}/modules/rostests/boot/arm/syscall.c
+        ${REACTOS_SOURCE_DIR}/modules/rostests/boot/arm/callback.c
         ${REACTOS_SOURCE_DIR}/modules/rostests/boot/arm/syscall_impl.c
         ${REACTOS_SOURCE_DIR}/modules/rostests/boot/arm/syscall.S
         ${REACTOS_SOURCE_DIR}/ntoskrnl/ke/arm/control.c
@@ -320,6 +321,7 @@ if(ARCH STREQUAL "arm" AND CMAKE_C_COMPILER_ID STREQUAL "Clang")
         ${REACTOS_SOURCE_DIR}/ntoskrnl/ke/arm/process.c
         ${REACTOS_SOURCE_DIR}/ntoskrnl/ke/arm/ctxswtch.s
         ${REACTOS_SOURCE_DIR}/ntoskrnl/ke/arm/kstack.s
+        ${REACTOS_SOURCE_DIR}/ntoskrnl/ke/arm/usercall.s
         ${REACTOS_SOURCE_DIR}/ntoskrnl/ke/arm/trap.s
         ${REACTOS_SOURCE_DIR}/ntoskrnl/ke/arm/trapframe.c
         ${REACTOS_SOURCE_DIR}/sdk/lib/rtl/arm/unwind.c
@@ -329,6 +331,7 @@ if(ARCH STREQUAL "arm" AND CMAKE_C_COMPILER_ID STREQUAL "Clang")
         arch/uefi/arm/entry.S)
     set_source_files_properties(
         ${REACTOS_SOURCE_DIR}/modules/rostests/boot/arm/syscall.c
+        ${REACTOS_SOURCE_DIR}/modules/rostests/boot/arm/callback.c
         ${REACTOS_SOURCE_DIR}/modules/rostests/boot/arm/syscall_impl.c
         ${REACTOS_SOURCE_DIR}/modules/rostests/boot/arm/debugsvc.c
         ${REACTOS_SOURCE_DIR}/ntoskrnl/ke/arm/control.c

@@ -589,6 +589,7 @@ WinMain(
     NtInitializeRegistry(CM_BOOT_FLAG_ACCEPTED | 1);
 
     /* Message loop for the SAS window */
+    DbgPrint("WINLOGON: Session initialized\n");
     while (GetMessageW(&Msg, WLSession->SASWindow, 0, 0))
     {
         TranslateMessage(&Msg);

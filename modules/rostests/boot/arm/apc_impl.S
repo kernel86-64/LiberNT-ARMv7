@@ -10,6 +10,8 @@
 #define LdrpInit ArmTestApcInit
 #define NtContinue ArmTestApcContinue
 #define RtlRaiseStatus ArmTestApcRaise
+#define KiArmUserCallbackDispatcher ArmTestCallbackDispatcher
+#define KiArmUserExceptionDispatcher ArmTestCallbackDispatcher
 #include "../../../../dll/ntdll/dispatch/arm/stubs_asm.s"
 
     TEXTAREA

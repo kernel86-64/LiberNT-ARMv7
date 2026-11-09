@@ -24,7 +24,7 @@ def run(*args, **kwargs):
     subprocess.run([str(arg) for arg in args], check=True, **kwargs)
 
 
-def session_modules(build, env, no_build):
+def session_modules(build, env, no_build, startup=False):
     targets = subprocess.check_output(['ninja', '-C', str(build), '-t', 'targets', 'all'], text=True)
     modules = {}
     for line in targets.splitlines():
@@ -33,6 +33,11 @@ def session_modules(build, env, no_build):
             modules.setdefault(Path(path).name.lower(), []).append(path)
     modules['comctl32.dll'] = ['dll/win32/comctl32/comctl32.dll']
     pending = {'csrsrv.dll', 'basesrv.dll', 'winsrv.dll', 'wininit.exe'}
+    if startup:
+        pending.update(['winlogon.exe', 'services.exe', 'lsass.exe', 'msgina.dll',
+                        'kbdus.dll', 'cdd.dll', 'msv1_0.dll'])
+    provided = {'ntdll.dll', 'ntoskrnl.exe', 'hal.dll', 'win32k.sys',
+                'kdcom.dll', 'bootvid.dll', 'lfbbvid.dll'}
     selected = {}
     while pending:
         batch = []
@@ -48,7 +53,7 @@ def session_modules(build, env, no_build):
         for path in batch:
             imports = subprocess.check_output(['llvm-readobj', '--coff-imports', str(build / path)], text=True)
             pending.update(name.lower() for name in re.findall(r'^  Name: (.+)$', imports, re.MULTILINE)
-                           if name.lower() not in selected)
+                           if name.lower() not in selected and name.lower() not in provided)
     return [build / selected[name] for name in sorted(selected) if name != 'ntdll.dll']
 
 
@@ -91,7 +96,7 @@ def clock_snapshot(qmp):
     raise RuntimeError('could not read the ARM shared clock counters')
 
 
-def boot(build, firmware, stage, lock, modern=False, modules=()):
+def boot(build, firmware, stage, lock, modern=False, modules=(), observe=False):
     image = build / 'arm-uefi-tests.img'
     variables = build / 'QEMU_VARS.fd'
     log = build / 'arm-boot.log'
@@ -128,13 +133,16 @@ def boot(build, firmware, stage, lock, modern=False, modules=()):
     if stage in ['kernel', 'clock', 'storage', 'user', 'session', 'csr']:
         payload = build / 'arm-kernel-payload'
         payload.mkdir(exist_ok=True)
-        run(build / 'host-tools/bin/mkhive', '-h:SYSTEM', f'-d:{payload}',
+        run(build / 'host-tools/bin/mkhive', '-h:SYSTEM,SOFTWARE' if stage == 'csr' else '-h:SYSTEM', f'-d:{payload}',
             ROOT / 'modules/rostests/boot/arm/system.inf',
             *([ROOT / 'modules/rostests/boot/arm/storage.inf',
                ROOT / 'modules/rostests/boot/arm/session.inf'] if stage in ['storage', 'user', 'session', 'csr'] else []),
             *([ROOT / 'drivers/directx/dxgkrnl/wddm_reg.inf',
                ROOT / 'drivers/directx/softgpu/softgpu_root_reg.inf',
-               ROOT / 'modules/rostests/boot/arm/graphics.inf'] if stage == 'csr' else []),
+               ROOT / 'drivers/filesystems/npfs/npfs_reg.inf',
+               ROOT / 'drivers/crypto/ksecdd/ksecdd_reg.inf',
+               ROOT / 'modules/rostests/boot/arm/graphics.inf',
+               ROOT / 'modules/rostests/boot/arm/startup.inf'] if stage == 'csr' else []),
             stdout=subprocess.DEVNULL)
         run('mmd', '-i', fat_image, '::/reactos', '::/reactos/system32',
             '::/reactos/system32/config')
@@ -153,6 +161,11 @@ def boot(build, firmware, stage, lock, modern=False, modules=()):
         ]:
             run('mcopy', '-i', fat_image, source, f'::/reactos/system32/{name}')
         run('mcopy', '-i', fat_image, payload / 'system', '::/reactos/system32/config/system')
+        if stage == 'csr':
+            run('mcopy', '-i', fat_image, payload / 'software', '::/reactos/system32/config/software')
+            run('mmd', '-i', fat_image, '::/reactos/Fonts')
+            for name in ['FreeSans.ttf', 'tahoma.ttf', 'tahomabd.ttf']:
+                run('mcopy', '-i', fat_image, ROOT / 'media/fonts' / name, '::/reactos/Fonts/' + name)
     if stage in ['storage', 'user', 'session', 'csr']:
         for source in ['dll/ntdll/ntdll.dll', 'base/system/smss/smss.exe',
                        'base/system/autochk/autochk.exe', 'subsystems/csr/csrss/csrss.exe',
@@ -171,7 +184,9 @@ def boot(build, firmware, stage, lock, modern=False, modules=()):
         if stage == 'csr':
             for source in ['drivers/directx/dxgmms2/dxgmms2.sys',
                            'drivers/directx/dxgkrnl/dxgkrnl.sys',
-                           'drivers/directx/softgpu/BasicDisplay.sys']:
+                           'drivers/directx/softgpu/BasicDisplay.sys',
+                           'drivers/filesystems/npfs/npfs.sys',
+                           'drivers/crypto/ksecdd/ksecdd.sys']:
                 run('mcopy', '-i', fat_image, build / source,
                     '::/reactos/system32/drivers/' + Path(source).name)
             run('mcopy', '-i', fat_image, build / 'win32ss/drivers/displays/framebuf/framebuf.dll',
@@ -207,7 +222,9 @@ def boot(build, firmware, stage, lock, modern=False, modules=()):
                     last_change, previous_size = now, size
                 text = log.read_text(errors='replace')
                 if any(marker in text for marker in [
-                        'Exception PC at', 'ASSERT [', 'tests: FAIL', '[ABORT]', '[PREFETCH ABORT]', '[UNDEF]']):
+                        'Exception PC at', 'ASSERT [', 'tests: FAIL', '[ABORT]', '[PREFETCH ABORT]', '[UNDEF]',
+                        'Kill csrss.exe', 'Kill wininit.exe', 'Kill winlogon.exe',
+                        'Kill services.exe', 'Kill lsass.exe']):
                     stop_guest(qmp)
                     keep = True
                     raise RuntimeError(
@@ -217,7 +234,7 @@ def boot(build, firmware, stage, lock, modern=False, modules=()):
                     stop_guest(qmp)
                     keep = True
                     break
-                if (stage == 'csr' and 'CSRSS: Server initialized' in text and
+                if (stage == 'csr' and not observe and 'CSRSS: Server initialized' in text and
                         'desktop ready 800x600 (scanout)' in text):
                     stop_guest(qmp)
                     keep = True
@@ -233,7 +250,7 @@ def boot(build, firmware, stage, lock, modern=False, modules=()):
                 if stage in ['storage', 'user', 'session', 'csr'] and '*** Fatal System Error:' in text:
                     stop_guest(qmp)
                     keep = True
-                    raise RuntimeError(f'{stage}: kernel stopped before the requested milestone; inspect {log}')
+                    raise RuntimeError(f'{stage}: kernel stopped during boot; inspect {log}')
                 if stage == 'clock' and '*** Fatal System Error:' in text:
                     stop_guest(qmp)
                     keep = True
@@ -243,17 +260,21 @@ def boot(build, firmware, stage, lock, modern=False, modules=()):
                     stop_guest(qmp)
                     keep = True
                     break
-                if stage == 'clock' and now - last_change >= 6 and now - started < 30:
+                if (stage == 'clock' or observe) and now - last_change >= 6 and now - started < 30:
                     stop_guest(qmp)
                     keep = True
                     snapshot = clock_snapshot(qmp)
                     if snapshot['interrupt_time'] <= clock['interrupt_time'] or snapshot['ticks'] <= clock['ticks']:
-                        raise RuntimeError('clock: ARM clock counters stopped progressing')
+                        raise RuntimeError(f'{stage}: ARM clock counters stopped progressing')
                     clock = snapshot
                     last_change = time.monotonic()
                     guest_command(qmp, 'cont')
                     keep = False
                 if now - started >= 30 or now - last_change >= 6:
+                    if observe and now - started >= 30:
+                        stop_guest(qmp)
+                        keep = True
+                        break
                     if stage in ['abi', 'kernel', 'clock', 'storage', 'user', 'session', 'csr'] and 'ARMv7 ABI tests: PASS' not in text:
                         stop_guest(qmp)
                         keep = True
@@ -277,6 +298,9 @@ def boot(build, firmware, stage, lock, modern=False, modules=()):
                     passed = passed and all(marker in text for marker in [
                         'SMSS: Boot environment initialized', 'CSRSS: Server initialized',
                         'DISPLAY_BRIDGE: adapter', 'desktop ready 800x600 (scanout)'])
+                    if observe:
+                        passed = passed and all(marker in text for marker in [
+                            'WINLOGON: Session initialized', 'LSASS: Security services initialized'])
                 if stage == 'session':
                     passed = passed and 'SMSS: Boot environment initialized' in text
                 if stage == 'user':
@@ -300,10 +324,14 @@ def boot(build, firmware, stage, lock, modern=False, modules=()):
                     process.kill()
                     process.wait()
     result = {'stage': stage, 'passed': True, 'seconds': round(time.monotonic() - started, 2)}
+    if observe:
+        result['continued_after_milestone'] = True
     if stage in ['storage', 'user', 'session', 'csr']:
         result['transport'] = 'virtio-mmio-v2' if modern else 'virtio-mmio-v1'
         result['milestone'] = {'session': 'smss-boot-environment', 'user': 'native-smss-entry',
                                'storage': 'fat-file-io', 'csr': 'csrss-server-initialization'}[stage]
+        if observe:
+            result['milestone'] = 'winlogon-and-lsass-initialization'
     if stage == 'clock':
         result.update(clock)
         result['expected_bugcheck'] = 'INACCESSIBLE_BOOT_DEVICE (empty storage fixture)'
@@ -317,7 +345,10 @@ def main():
     parser.add_argument('--stage', choices=['abi', 'loader', 'kernel', 'clock', 'storage', 'user', 'session', 'csr', 'both'], default='both')
     parser.add_argument('--no-build', action='store_true')
     parser.add_argument('--virtio-modern', action='store_true')
+    parser.add_argument('--observe', action='store_true')
     args = parser.parse_args()
+    if args.observe and args.stage != 'csr':
+        parser.error('--observe requires --stage csr')
     build = args.build_dir.resolve()
     cache = (build / 'CMakeCache.txt').read_text().splitlines()
     if not any(line.startswith('ARCH:') and line.split('=', 1)[-1] == 'arm' for line in cache):
@@ -334,9 +365,13 @@ def main():
             if args.stage in ['storage', 'user', 'session', 'csr']:
                 run('ninja', '-C', build, 'virtblk', 'mountmgr', 'fastfat', 'arm_storage_test', 'ntdll', 'smss', 'autochk', 'csrss', 'win32k', 'ftfd', 'hidparse', 'csrsrv', '-j8', env=env)
             if args.stage == 'csr':
-                run('ninja', '-C', build, 'dxgmms2', 'dxgkrnl', 'softgpu', 'framebuf', '-j8', env=env)
+                run('ninja', '-C', build, 'dxgmms2', 'dxgkrnl', 'softgpu', 'framebuf', 'npfs', 'ksecdd', '-j8', env=env)
         if args.stage in ['user', 'session', 'csr']:
-            modules = session_modules(build, env, args.no_build)
+            modules = session_modules(build, env, args.no_build, args.stage == 'csr')
+        if args.stage == 'csr':
+            compiler = next(line.split('=', 1)[1] for line in cache if line.startswith('CMAKE_C_COMPILER:'))
+            run('python3', ROOT / 'modules/rostests/boot/arm/test-syscall-stubs.py',
+                build / 'win32ss/win32u/win32u.dll', 'llvm-readobj', compiler)
         if not args.no_build:
             if args.stage in ['kernel', 'clock', 'storage', 'user', 'session', 'csr']:
                 run('ninja', '-C', build, 'ntoskrnl', 'hal', 'kdcom', 'bootvid', 'lfbbvid',
@@ -346,7 +381,7 @@ def main():
         try:
             for stage in stages:
                 try:
-                    result = boot(build, args.firmware.resolve(), stage, lock, args.virtio_modern, modules)
+                    result = boot(build, args.firmware.resolve(), stage, lock, args.virtio_modern, modules, args.observe)
                 except Exception as error:
                     results.append({'stage': stage, 'passed': False, 'error': str(error)})
                     raise

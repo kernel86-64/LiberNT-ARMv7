@@ -111,7 +111,9 @@ supports these boot stages:
 - `csr`: continues through the first Win32 system calls and requires the native
   system-session CSRSS server to finish initialization and the display bridge
   to publish an 800x600 scanout. Wininit and its import dependencies are
-  included. This does not claim a working desktop.
+  included. Add `--observe` to require LSASS and Winlogon initialization and
+  continue for 30 seconds instead of stopping at CSRSS. Quiet intervals check
+  the shared clock. This does not claim an interactive desktop session.
 
 Use `--stage abi`, `--stage loader`, `--stage kernel`, `--stage clock`,
 `--stage storage`, `--stage user`, `--stage session` or `--stage csr` to select one boot. Add `--virtio-modern`
@@ -350,9 +352,62 @@ CSRSS loads Basesrv and Winsrv and finishes system-session initialization.
 A live process-list inspection found SMSS, two CSRSS processes and Wininit.
 Paging-file creation remains unsuccessful in this minimal image. This
 milestone proves adapter initialization, not a working desktop.
-The maintainer reports a later `0xC000021A` failure when allowing this image
-to continue. The `csr` stop point precedes that failure and is not a stability
-test; investigation of the subsequent critical-process exit remains open.
+
+Continuing beyond the original `csr` stop point reproduced `0xC000021A`
+with `STATUS_OBJECT_NAME_NOT_FOUND`: SMSS could not find Winlogon. The startup
+fixture now supplies Winlogon, Services, LSASS and their static dependencies,
+plus the dynamically loaded authentication package, keyboard layout and CDD.
+It includes NPFS and the `PIPE` DOS-device mapping for local RPC, KsecDD for
+the existing process CSPRNG, a computer name, Winlogon configuration and GUI
+fonts in a minimal SOFTWARE hive. No critical-process termination is bypassed.
+
+`--stage csr --observe` continues for a bounded 30-second run, requires LSASS
+and Winlogon initialization, rejects critical-process exception exits and
+checks the shared clock every six seconds without log output. The ARM guest
+reaches the rendered 800x600 lock screen. Live inspection found both CSRSS
+processes, Wininit, Winlogon, Services and LSASS. This is a lock-screen startup
+milestone; interactive logon and an Explorer desktop remain untested.
+
+The ARM callback path now preserves kernel nonvolatile registers, VFP state,
+IRQ/FIQ masks, callback nesting and existing stack metadata across user-mode
+execution and `NtCallbackReturn`. Continuation state is an internal stack
+local, not a claim about a Windows KCALLOUT_FRAME layout. The EFI test exercises
+nested callbacks, return status and result lengths, no-active-callback and
+nesting-limit errors. First-chance user exceptions now receive CONTEXT and
+EXCEPTION_RECORD on an aligned user stack and pass through ntdll SEH before
+second-chance termination. Frame-copy tests preserve integer and VFP values.
+Both VirtIO MMIO versions pass the 30-second observation with these startup
+markers. Shared Kernel32 context and GDI text changes also pass syntax
+compilation for amd64, ARM64 and RISC-V64; no additional architecture build
+cache was created.
+
+The user dispatcher shapes follow the published
+[Wine ARM implementation](https://github.com/wine-mirror/wine/blob/master/dlls/ntdll/signal_arm.c)
+and the Windows ARM ABI; no Windows binaries were inspected.
+
+Win32 thread/process creation uses the existing ntdll `RtlUserThreadStart`
+gateway with an eight-byte-aligned stack and User/Thumb CPSR (`0x30`, Armv7
+CPSR mode/T bits). The old context embedded a parent Kernel32 thunk address,
+which is unsafe when the child maps that DLL elsewhere. The gateway resolves
+the initialized child's existing Kernel32 thread-start callback.
+
+The linked Win32u ARM stubs previously started at zero, selecting the NT
+service table. Their IDs now start at the Win32k table base. A PE regression
+checks 834 exported stubs against the compiled ARM32 kernel service order;
+it failed on `NtGdiAbortDoc` before the fix and passes afterward. These IDs
+are LiberNT internal integration, not evidence for Windows syscall numbering.
+
+A live GDI failure exposed two independent batching bugs. Odd UTF-16 string
+lengths left the next command unaligned; variable text records now include
+padding to their C structure alignment. ARM also omitted the registered GDI
+batch-flush callback before Win32k services. Without it, `NtGdiFlush` left the
+TEB buffer full and later commands overwrote `Win32ClientInfo`; the stopped
+guest had offset `0x53c` beyond the 1240-byte buffer. The ARM dispatcher now
+flushes before executing the service. EFI tests check ordering and that NT
+services do not trigger this GUI flush. An ExtTextOut API regression queues
+consecutive odd-length commands on a compatible bitmap. It passes ARM syntax
+compilation; its Windows 11 baseline has not been run. QEMU startup verifies
+the real font and GUI path.
 
 ARM exports `HalSetBusDataByOffset` with the documented zero-byte result for
 unsupported buses; it does not claim PCI configuration support. The existing
@@ -411,7 +466,8 @@ forwarder names and Thumb code addresses afterward:
 python3 modules/rostests/tests/spec2def/test-arm-forwarders.py \
     output-Clang-arm-debug/host-tools/bin/spec2def \
     ~/.local/opt/rosbe/llvm/bin/clang ~/.local/opt/rosbe/llvm/bin/llvm-readobj
-python3 scripts/test-arm-uefi.py --stage csr
+python3 scripts/test-arm-uefi.py --stage csr --observe
+python3 scripts/test-arm-uefi.py --stage csr --observe --virtio-modern
 ```
 
 Contracts come from Microsoft's [Mount Manager requests](https://learn.microsoft.com/en-us/windows-hardware/drivers/storage/supporting-mount-manager-requests-in-a-storage-class-driver),

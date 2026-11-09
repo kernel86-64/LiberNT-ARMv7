@@ -670,6 +670,7 @@ ExtTextOutW(
                     // to assure alignment of 4.
                 }
 
+                cjSize = ALIGN_UP_BY(cjSize, TYPE_ALIGNMENT(GDIBSTEXTOUT));
                 if ((pTeb->GdiTebBatch.Offset + cjSize ) <= GDIBATCHBUFSIZE)
                 {
                     pdcattr->ulDirty_ |= DC_MODE_DIRTY|DC_FONTTEXT_DIRTY;

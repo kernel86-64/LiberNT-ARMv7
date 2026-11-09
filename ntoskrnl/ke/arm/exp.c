@@ -14,6 +14,8 @@
 
 /* FUNCTIONS ******************************************************************/
 
+BOOLEAN KiArmDispatchUserException(PKTRAP_FRAME Trap, PCONTEXT Context, PEXCEPTION_RECORD Record);
+
 VOID
 NTAPI
 KiDispatchException(IN PEXCEPTION_RECORD ExceptionRecord,
@@ -100,7 +102,14 @@ KiDispatchException(IN PEXCEPTION_RECORD ExceptionRecord,
         if (PspPicoDispatchException(ExceptionRecord, ExceptionFrame, TrapFrame))
             return;
 
-        /* FIXME: TODO */
+        if (FirstChance)
+        {
+            if (DbgkForwardException(ExceptionRecord, TRUE, FALSE)) return;
+            if (KiArmDispatchUserException(TrapFrame, &Context, ExceptionRecord)) return;
+        }
+        if (DbgkForwardException(ExceptionRecord, TRUE, TRUE) ||
+            DbgkForwardException(ExceptionRecord, FALSE, TRUE))
+            return;
         /* 3rd strike, kill the process */
         DPRINT1("Kill %.16s, ExceptionCode: %lx, ExceptionAddress: %lx\n",
                 PsGetCurrentProcess()->ImageFileName,

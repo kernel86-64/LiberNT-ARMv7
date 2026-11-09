@@ -1,0 +1,19 @@
+; PROJECT:     LiberNT boot tests
+; LICENSE:     GPL-3.0-or-later
+; PURPOSE:     Configure the Winlogon keyboard, authentication package and GUI fonts
+; COPYRIGHT:   Copyright 2026 LiberNT contributors
+
+[Version]
+Signature = "$Windows NT$"
+
+[AddReg]
+HKLM,"SYSTEM\CurrentControlSet\Control\Keyboard Layouts\00000409","Layout File",0x00000000,"kbdus.dll"
+HKLM,"SYSTEM\CurrentControlSet\Control\Keyboard Layouts\00000409","Layout Text",0x00000000,"US"
+HKLM,"SYSTEM\CurrentControlSet\Control\Lsa","Authentication Packages",0x00010000,"msv1_0"
+HKLM,"SYSTEM\CurrentControlSet\Control\Session Manager\DOS Devices","PIPE",0x00000000,"\Device\NamedPipe"
+HKLM,"SYSTEM\CurrentControlSet\Control\ComputerName\ComputerName","ComputerName",0x00000000,"LBRNT"
+HKLM,"SOFTWARE\Microsoft\Windows NT\CurrentVersion\Winlogon",,0x00000010
+HKLM,"SOFTWARE\Microsoft\Windows NT\CurrentVersion\Fonts","FreeSans (TrueType)",0x00000000,"FreeSans.ttf"
+HKLM,"SOFTWARE\Microsoft\Windows NT\CurrentVersion\Fonts","Tahoma (TrueType)",0x00000000,"tahoma.ttf"
+HKLM,"SOFTWARE\Microsoft\Windows NT\CurrentVersion\Fonts","Tahoma Bold (TrueType)",0x00000000,"tahomabd.ttf"
+HKLM,"SOFTWARE\Microsoft\Windows NT\CurrentVersion\FontSubstitutes","System",0x00000000,"FreeSans"

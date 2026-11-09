@@ -179,6 +179,20 @@ KiSystemService(PKTHREAD Thread, PKTRAP_FRAME TrapFrame, ULONG Instruction)
         _SEH2_END;
     }
     _enable();
+    if (Mode == UserMode && Offset == SERVICE_TABLE_TEST && Thread->Teb && KeGdiFlushUserBatch)
+    {
+        ULONG BatchCount = 0;
+        _SEH2_TRY
+        {
+            BatchCount = Thread->Teb->GdiBatchCount;
+        }
+        _SEH2_EXCEPT(EXCEPTION_EXECUTE_HANDLER)
+        {
+            BatchCount = 0;
+        }
+        _SEH2_END;
+        if (BatchCount) KeGdiFlushUserBatch();
+    }
     TrapFrame->R0 = KiSyscallHandlers[ArgumentCount](SystemCall, Arguments);
     _disable();
     if (Mode == UserMode && KeGetCurrentIrql() != PASSIVE_LEVEL)

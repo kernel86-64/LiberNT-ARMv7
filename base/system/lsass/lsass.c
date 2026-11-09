@@ -76,7 +76,7 @@ wWinMain(IN HINSTANCE hInstance,
 
     /* FIXME: More initialization */
 
-    DPRINT("  Done...\n");
+    DPRINT1("LSASS: Security services initialized\n");
 
 ByeBye:
     NtTerminateThread(NtCurrentThread(), Status);

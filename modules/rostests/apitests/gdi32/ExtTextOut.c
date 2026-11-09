@@ -48,6 +48,38 @@ DrawSample(
     GdiFlush();
 }
 
+static VOID TestOddBatchLengths(VOID)
+{
+    HDC Screen, Dc;
+    HBITMAP Bitmap, OldBitmap;
+    DWORD Limit;
+    UINT Index;
+
+    Screen = GetDC(NULL);
+    Dc = CreateCompatibleDC(Screen);
+    Bitmap = CreateCompatibleBitmap(Screen, TEST_SIZE, TEST_SIZE);
+    ok(Screen && Dc && Bitmap, "Cannot create a compatible text batch target\n");
+    if (!Screen || !Dc || !Bitmap)
+    {
+        if (Bitmap) DeleteObject(Bitmap);
+        if (Dc) DeleteDC(Dc);
+        if (Screen) ReleaseDC(NULL, Screen);
+        return;
+    }
+    OldBitmap = SelectObject(Dc, Bitmap);
+    GdiFlush();
+    Limit = GdiSetBatchLimit(32);
+    for (Index = 0; Index < 8; ++Index)
+        ok(ExtTextOutW(Dc, 0, Index, 0, NULL, L"ABCDEFG", 3 + 2 * (Index % 3), NULL),
+           "Odd text batch %u failed, error %lu\n", Index, GetLastError());
+    ok(GdiFlush(), "Flushing consecutive odd text batches failed\n");
+    GdiSetBatchLimit(Limit);
+    SelectObject(Dc, OldBitmap);
+    DeleteObject(Bitmap);
+    DeleteDC(Dc);
+    ReleaseDC(NULL, Screen);
+}
+
 START_TEST(ExtTextOut)
 {
     static const RECT Clip = { 20, 24, 70, 80 };
@@ -59,6 +91,7 @@ START_TEST(ExtTextOut)
     HFONT Font, OldFont;
     HDC Dc;
 
+    TestOddBatchLengths();
     Dc = CreateCompatibleDC(NULL);
     ok(Dc != NULL, "CreateCompatibleDC failed\n");
     Bitmap = CreateDIBSection(Dc, &Info, DIB_RGB_COLORS, (PVOID *)&Bits, NULL, 0);

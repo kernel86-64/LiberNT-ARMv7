@@ -26,14 +26,27 @@
     bl RtlRaiseStatus
     NESTED_END KiUserApcDispatcher
 
-    LEAF_ENTRY KiUserCallbackDispatcher
-    __assertfail
-    bx lr
-    LEAF_END KiUserCallbackDispatcher
+    NESTED_ENTRY KiUserCallbackDispatcher
+    nop.w
+    .seh_custom 0xee, 0x01
+    nop
+    .seh_save_regs {lr}
+    nop
+    .seh_stackalloc 12
+    PROLOG_END
+    ldr r0, [sp, #CkApiNumber]
+    ldr r1, [sp, #CkBuffer]
+    ldr r2, [sp, #CkLength]
+    bl KiArmUserCallbackDispatcher
+    NESTED_END KiUserCallbackDispatcher
 
-    LEAF_ENTRY KiUserExceptionDispatcher
-    __assertfail
-    bx lr
-    LEAF_END KiUserExceptionDispatcher
+    NESTED_ENTRY KiUserExceptionDispatcher
+    nop.w
+    .seh_custom 0xee, 0x02
+    PROLOG_END
+    add.w r0, sp, #CONTEXT_FRAME_LENGTH
+    mov r1, sp
+    bl KiArmUserExceptionDispatcher
+    NESTED_END KiUserExceptionDispatcher
 
     END
