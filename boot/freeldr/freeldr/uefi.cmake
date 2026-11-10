@@ -389,6 +389,42 @@ if(ARCH STREQUAL "arm" AND SARCH STREQUAL "virt")
     add_importlibs(arm_storage_test ntoskrnl hal)
 endif()
 
+if(ARCH STREQUAL "arm" AND CMAKE_C_COMPILER_ID STREQUAL "Clang")
+    add_executable(arm_platform_probe ${REACTOS_SOURCE_DIR}/modules/rostests/boot/arm/platform.c)
+    set_target_properties(arm_platform_probe PROPERTIES SUFFIX ".efi")
+    set_subsystem(arm_platform_probe efi_application)
+    set_entrypoint(arm_platform_probe EfiEntry)
+    target_link_options(arm_platform_probe PRIVATE -Wl,/driver,--exclude-all-symbols,--section-alignment,0x1000)
+    target_link_libraries(arm_platform_probe blrtl libcntpr)
+    target_compile_definitions(arm_platform_probe PRIVATE UEFIBOOT)
+    target_compile_options(arm_platform_probe PRIVATE -mno-implicit-float)
+    add_dependencies(arm_platform_probe xdk)
+    add_custom_command(TARGET arm_platform_probe POST_BUILD
+        COMMAND ${ARM_UEFI_PYTHON} ${REACTOS_SOURCE_DIR}/sdk/tools/arm_uefi.py $<TARGET_FILE:arm_platform_probe>
+        VERBATIM)
+    set_property(TARGET arm_platform_probe APPEND PROPERTY LINK_DEPENDS ${REACTOS_SOURCE_DIR}/sdk/tools/arm_uefi.py)
+
+    set(SMDKC210_TEST_SOURCES
+        ${REACTOS_SOURCE_DIR}/modules/rostests/boot/arm/smdkc210.S
+        ${REACTOS_SOURCE_DIR}/modules/rostests/boot/arm/smdkc210.c
+        ${CMAKE_CURRENT_SOURCE_DIR}/arch/arm/shortdesc.c)
+    add_custom_command(OUTPUT ${REACTOS_BINARY_DIR}/arm-smdkc210.elf
+        COMMAND ${CMAKE_C_COMPILER} --target=arm-none-eabi -mcpu=cortex-a9 -marm
+            -mfloat-abi=soft -ffreestanding -fno-builtin -fno-stack-protector
+            -nostdlib -O1 -g -Wall -Wextra -Werror -fuse-ld=lld
+            -I ${CMAKE_CURRENT_SOURCE_DIR}/arch/arm
+            -I ${REACTOS_SOURCE_DIR}/ntoskrnl/include/internal/arm
+            -Wl,-T,${REACTOS_SOURCE_DIR}/modules/rostests/boot/arm/smdkc210.ld
+            -Wl,--build-id=none ${SMDKC210_TEST_SOURCES}
+            -o ${REACTOS_BINARY_DIR}/arm-smdkc210.elf
+        DEPENDS ${SMDKC210_TEST_SOURCES}
+            ${REACTOS_SOURCE_DIR}/ntoskrnl/include/internal/arm/processor.h
+            ${CMAKE_CURRENT_SOURCE_DIR}/arch/arm/shortdesc.h
+            ${REACTOS_SOURCE_DIR}/modules/rostests/boot/arm/smdkc210.ld
+        VERBATIM)
+    add_custom_target(arm_smdkc210_test DEPENDS ${REACTOS_BINARY_DIR}/arm-smdkc210.elf)
+endif()
+
 if(ARCH STREQUAL "arm" AND SARCH STREQUAL "virt")
     add_executable(arm_account_setup ${REACTOS_SOURCE_DIR}/modules/rostests/boot/arm/setup.c)
     set_source_files_properties(${REACTOS_SOURCE_DIR}/modules/rostests/boot/arm/setup.c

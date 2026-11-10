@@ -224,10 +224,11 @@ def clock_snapshot(qmp):
     raise RuntimeError('could not read the ARM shared clock counters')
 
 
-def boot(build, firmware, stage, lock, modern=False, modules=(), observe=False, input_devices=False, login=False, reuse=False, installed=None):
+def boot(build, firmware, stage, lock, modern=False, modules=(), observe=False, input_devices=False, login=False, reuse=False, installed=None, shell=None):
     image = installed if installed else build / 'arm-uefi-tests.img'
     reuse = reuse or installed is not None
-    variables = build / 'QEMU_VARS.fd'
+    transient_variables = stage in ['probe', 'abi', 'loader', 'kernel', 'clock', 'storage']
+    variables = firmware.with_name('edk2-arm-vars.fd') if transient_variables else build / 'QEMU_VARS.fd'
     log = build / 'arm-boot.log'
     qmp = build / 'arm-qemu.qmp'
     if installed:
@@ -236,9 +237,10 @@ def boot(build, firmware, stage, lock, modern=False, modules=(), observe=False, 
         if not image.is_file() or not variables.is_file():
             raise RuntimeError('the reusable ARM image and firmware variables are missing')
     else:
-        application = 'arm_uefi_test' if stage == 'abi' else 'uefildr'
+        application = {'abi': 'arm_uefi_test', 'probe': 'arm_platform_probe'}.get(stage, 'uefildr')
         binary = build / 'boot/freeldr/freeldr' / (application + '.efi')
-        shutil.copyfile(firmware.with_name('edk2-arm-vars.fd'), variables)
+        if not transient_variables:
+            shutil.copyfile(firmware.with_name('edk2-arm-vars.fd'), variables)
         with image.open('wb') as output:
             output.truncate(128 * 1024 * 1024)
         fat_image = image
@@ -256,7 +258,11 @@ def boot(build, firmware, stage, lock, modern=False, modules=(), observe=False, 
         else:
             run('mkfs.vfat', '-F', '32', image, stdout=subprocess.DEVNULL)
         run('mmd', '-i', fat_image, '::/EFI', '::/EFI/BOOT')
-        run('mcopy', '-i', fat_image, binary, '::/EFI/BOOT/BOOTARM.EFI')
+        run('mcopy', '-i', fat_image, shell if shell else binary, '::/EFI/BOOT/BOOTARM.EFI')
+        if shell:
+            run('mmd', '-i', fat_image, '::/EFI/TOOLS')
+            run('mcopy', '-i', fat_image, binary, '::/EFI/TOOLS/libernt-platform.efi')
+            run('mcopy', '-i', fat_image, ROOT / 'modules/rostests/boot/arm/n7000-startup.nsh', '::/startup.nsh')
         config = build / 'freeldr.ini'
         config.write_text(
             '[FREELOADER]\nTimeOut=0\nDefaultOS=LiberNT\nDebug=COM1\n\n'
@@ -367,7 +373,7 @@ def boot(build, firmware, stage, lock, modern=False, modules=(), observe=False, 
         '-m', '512', '-smp', '1', '-display', 'none', '-monitor', 'none',
         '-serial', 'stdio', '-nic', 'none',
         '-drive', f'if=pflash,format=raw,readonly=on,file={firmware}',
-        '-drive', f'if=pflash,format=raw,file={variables}',
+        '-drive', f'if=pflash,format=raw,{"snapshot=on," if transient_variables else ""}file={variables}',
         '-drive', f'if=none,format=raw,id=os,file={image}',
         '-device', 'virtio-blk-device,drive=os', '-device', 'ramfb',
         '-gdb', 'tcp:127.0.0.1:1234',
@@ -381,6 +387,7 @@ def boot(build, firmware, stage, lock, modern=False, modules=(), observe=False, 
     input_verified = False
     login_attempted = False
     previous_size = 0
+    probe_completed = None
     clock = {"interrupt_time": 0, "ticks": 0}
     with log.open('wb') as output:
         process = subprocess.Popen(command, stdout=output, stderr=subprocess.STDOUT,
@@ -402,6 +409,11 @@ def boot(build, firmware, stage, lock, modern=False, modules=(), observe=False, 
                     raise RuntimeError(
                         f'{stage}: guest stopped for debugging (PID {process.pid}); '
                         f'gdb target remote 127.0.0.1:1234; log: {log}')
+                if stage == 'probe' and 'ARM platform probe: COMPLETE' in text:
+                    if probe_completed is None:
+                        probe_completed = now
+                    elif now - probe_completed >= 1:
+                        break
                 if (login and not login_attempted and now - started >= 18 and
                         ('WINLOGON: Session initialized' in text if reuse else 'ARM account setup: PASS' in text)):
                     exercise_login(qmp, build)
@@ -463,7 +475,7 @@ def boot(build, firmware, stage, lock, modern=False, modules=(), observe=False, 
                         stop_guest(qmp)
                         keep = True
                         break
-                    if stage in ['abi', 'kernel', 'clock', 'storage', 'user', 'session', 'csr'] and 'ARMv7 ABI tests: PASS' not in text:
+                    if stage in ['probe', 'abi', 'kernel', 'clock', 'storage', 'user', 'session', 'csr'] and 'ARMv7 ABI tests: PASS' not in text:
                         stop_guest(qmp)
                         keep = True
                         raise RuntimeError(
@@ -471,7 +483,14 @@ def boot(build, firmware, stage, lock, modern=False, modules=(), observe=False, 
                             f'gdb target remote 127.0.0.1:1234; log: {log}')
                     break
             text = log.read_text(errors='replace')
-            if stage == 'abi':
+            if stage == 'probe':
+                passed = all(marker in text for marker in [
+                    'CPU MIDR=', 'translation=long-descriptor-capable',
+                    'GOP framebuffer=', 'Disk 0 ', 'UEFI memory map entries=',
+                    'ARM platform probe: COMPLETE']) and 'ARM platform probe: FAIL' not in text
+                returned = 'Shell>' if shell else 'BdsDxe:'
+                passed = passed and returned in text.split('ARM platform probe: COMPLETE')[-1]
+            elif stage == 'abi':
                 passed = 'ARMv7 ABI tests: PASS' in text and 'tests: FAIL' not in text
             elif stage in ['kernel', 'clock', 'storage', 'user', 'session', 'csr']:
                 passed = all(marker in text for marker in [
@@ -514,6 +533,9 @@ def boot(build, firmware, stage, lock, modern=False, modules=(), observe=False, 
                     process.kill()
                     process.wait()
     result = {'stage': stage, 'passed': True, 'seconds': round(time.monotonic() - started, 2)}
+    if stage == 'probe':
+        result['milestone'] = 'firmware-platform-inventory; no kernel startup'
+        result['shell_autostart'] = shell is not None
     if login:
         result['account'] = 'tester-profile-and-explorer-desktop'
         result['reused_image'] = reuse
@@ -537,8 +559,9 @@ def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--build-dir', type=Path, default=ROOT / 'output-Clang-arm-debug')
     parser.add_argument('--firmware', type=Path, default=Path('/usr/share/qemu/edk2-arm-code.fd'))
-    parser.add_argument('--stage', choices=['abi', 'loader', 'kernel', 'clock', 'storage', 'user', 'session', 'csr', 'both'], default='both')
+    parser.add_argument('--stage', choices=['probe', 'abi', 'loader', 'kernel', 'clock', 'storage', 'user', 'session', 'csr', 'both'], default='both')
     parser.add_argument('--no-build', action='store_true')
+    parser.add_argument('--shell', type=Path, help='test probe autostart through an existing ARM UEFI Shell binary')
     parser.add_argument('--virtio-modern', action='store_true')
     parser.add_argument('--observe', action='store_true')
     parser.add_argument('--installed-image', type=Path, help='observe an existing complete installed ARM image without repacking it')
@@ -546,6 +569,12 @@ def main():
     parser.add_argument('--login', action='store_true', help='provision and test the local tester account')
     parser.add_argument('--input', action='store_true', help='enable the VirtIO keyboard and tablet')
     args = parser.parse_args()
+    if args.shell:
+        if args.stage != 'probe':
+            parser.error('--shell requires --stage probe')
+        args.shell = args.shell.resolve()
+        if not args.shell.is_file():
+            parser.error('--shell must name an existing ARM UEFI Shell binary')
     if args.installed_image:
         if args.stage != 'csr' or args.login:
             parser.error('--installed-image requires --stage csr without --login')
@@ -575,7 +604,8 @@ def main():
         env = dict(os.environ, CCACHE_DISABLE='1')
         modules = []
         if not args.no_build:
-            run('ninja', '-C', build, 'uefildr', 'arm_uefi_test', '-j8', env=env)
+            targets = ['arm_platform_probe'] if args.stage == 'probe' else ['uefildr', 'arm_uefi_test']
+            run('ninja', '-C', build, *targets, '-j8', env=env)
             if args.stage in ['storage', 'user', 'session', 'csr']:
                 run('ninja', '-C', build, 'virtblk', 'mountmgr', 'fastfat', 'arm_storage_test', 'ntdll', 'smss', 'autochk', 'csrss', 'win32k', 'ftfd', 'hidparse', 'csrsrv', '-j8', env=env)
             if args.stage == 'csr':
@@ -597,7 +627,7 @@ def main():
         try:
             for stage in stages:
                 try:
-                    result = boot(build, args.firmware.resolve(), stage, lock, args.virtio_modern, modules, args.observe, args.input, args.login, args.reuse_image, args.installed_image)
+                    result = boot(build, args.firmware.resolve(), stage, lock, args.virtio_modern, modules, args.observe, args.input, args.login, args.reuse_image, args.installed_image, args.shell)
                 except Exception as error:
                     results.append({'stage': stage, 'passed': False, 'error': str(error)})
                     raise

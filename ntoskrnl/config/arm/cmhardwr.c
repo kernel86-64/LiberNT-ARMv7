@@ -9,12 +9,37 @@
 /* INCLUDES ******************************************************************/
 
 #include "ntoskrnl.h"
+#include <internal/arm/processor.h>
 #define NDEBUG
 #include "debug.h"
 
 /* GLOBALS *******************************************************************/
 
 /* FUNCTIONS *****************************************************************/
+
+static NTSTATUS CmpArmSetProcessorIdentity(HANDLE Key, ULONG Midr)
+{
+    WCHAR Buffer[64];
+    UNICODE_STRING Name;
+    const CHAR *ProcessorName = KiArmProcessorName(Midr);
+    NTSTATUS Status;
+
+    if (ProcessorName)
+        Status = RtlStringCbPrintfW(Buffer, sizeof(Buffer), L"%hs", ProcessorName);
+    else
+        Status = RtlStringCbPrintfW(Buffer, sizeof(Buffer), L"ARM Processor (MIDR %08lx)", Midr);
+    if (!NT_SUCCESS(Status)) return Status;
+    RtlInitUnicodeString(&Name, L"ProcessorNameString");
+    Status = NtSetValueKey(Key, &Name, 0, REG_SZ, Buffer, (ULONG)(wcslen(Buffer) + 1) * sizeof(WCHAR));
+    if (!NT_SUCCESS(Status)) return Status;
+    if ((Midr >> 24) == 0x41)
+        Status = RtlStringCbCopyW(Buffer, sizeof(Buffer), L"ARM Limited");
+    else
+        Status = RtlStringCbPrintfW(Buffer, sizeof(Buffer), L"ARM implementer 0x%02lx", Midr >> 24);
+    if (!NT_SUCCESS(Status)) return Status;
+    RtlInitUnicodeString(&Name, L"VendorIdentifier");
+    return NtSetValueKey(Key, &Name, 0, REG_SZ, Buffer, (ULONG)(wcslen(Buffer) + 1) * sizeof(WCHAR));
+}
 
 NTSTATUS
 NTAPI
@@ -69,7 +94,9 @@ CmpInitializeMachineDependentConfiguration(IN PLOADER_PARAMETER_BLOCK LoaderBloc
         Status = CmpInitializeRegistryNode(&ConfigData, System, &Key,
                                           InterfaceTypeUndefined, MAXULONG, IndexTable);
         if (!NT_SUCCESS(Status)) break;
+        Status = CmpArmSetProcessorIdentity(Key, Midr);
         NtClose(Key);
+        if (!NT_SUCCESS(Status)) break;
     }
     ExFreePoolWithTag(CmpConfigurationData, TAG_CM);
     CmpConfigurationData = NULL;

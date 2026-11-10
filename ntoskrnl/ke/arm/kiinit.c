@@ -84,9 +84,6 @@ KiInitializeKernel(IN PKPROCESS InitProcess,
         /* Set boot-level flags */
         KeProcessorArchitecture = PROCESSOR_ARCHITECTURE_ARM;
         KeFeatureBits = 0;
-        /// FIXME: just a wild guess
-        KeProcessorLevel = (USHORT)(Pcr->Prcb.ProcessorState.ArchState.Cp15_Cr0_CpuId >> 8);
-        KeProcessorRevision = (USHORT)(Pcr->Prcb.ProcessorState.ArchState.Cp15_Cr0_CpuId & 0xFF);
 #if 0
         /* Set the current MP Master KPRCB to the Boot PRCB */
         Prcb->MultiThreadSetMaster = Prcb;
@@ -200,6 +197,7 @@ KiInitializePcr(IN ULONG ProcessorNumber,
     /* Set the PCRB Version */
     Pcr->Prcb.MajorVersion = PRCB_MAJOR_VERSION;
     Pcr->Prcb.MinorVersion = PRCB_MINOR_VERSION;
+    Pcr->Prcb.ProcessorState.ArchState.Cp15_Cr0_CpuId = _MoveFromCoprocessor(CP15_MIDR);
 
     /* Set the Build Type */
     Pcr->Prcb.BuildType = 0;

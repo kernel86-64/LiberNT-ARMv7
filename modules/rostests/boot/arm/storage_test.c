@@ -8,6 +8,7 @@
 #include <ntifs.h>
 #include <mountdev.h>
 #include <ntosp.h>
+#include <ntstrsafe.h>
 
 static NTSTATUS ArmStorageControl(PDEVICE_OBJECT Device, ULONG Code, PVOID Buffer,
                                   ULONG Length, PIO_STATUS_BLOCK IoStatus)
@@ -84,7 +85,9 @@ static NTSTATUS ArmProcessorIdentity(VOID)
     UNICODE_STRING Value = RTL_CONSTANT_STRING(L"Identifier");
     OBJECT_ATTRIBUTES Attributes;
     HANDLE Key;
-    ULONG Buffer[128], Length;
+    ULONG Buffer[128], Length, Midr;
+    WCHAR Expected[64];
+    UNICODE_STRING ActualString, ExpectedString;
     PKEY_VALUE_PARTIAL_INFORMATION Information = (PKEY_VALUE_PARTIAL_INFORMATION)Buffer;
     NTSTATUS Status;
 
@@ -95,6 +98,37 @@ static NTSTATUS ArmProcessorIdentity(VOID)
     Status = ZwOpenKey(&Key, KEY_QUERY_VALUE, &Attributes);
     if (!NT_SUCCESS(Status)) return Status;
     Status = ZwQueryValueKey(Key, &Value, KeyValuePartialInformation, Buffer, sizeof(Buffer), &Length);
+    if (!NT_SUCCESS(Status))
+    {
+        ZwClose(Key);
+        return Status;
+    }
+    if (Length < FIELD_OFFSET(KEY_VALUE_PARTIAL_INFORMATION, Data) || Length > sizeof(Buffer) ||
+        Information->Type != REG_SZ || Information->DataLength <= sizeof(WCHAR) ||
+        Information->DataLength % sizeof(WCHAR) ||
+        Information->DataLength > Length - FIELD_OFFSET(KEY_VALUE_PARTIAL_INFORMATION, Data) ||
+        ((PWCHAR)Information->Data)[Information->DataLength / sizeof(WCHAR) - 1] != UNICODE_NULL)
+    {
+        ZwClose(Key);
+        return STATUS_DATA_ERROR;
+    }
+    __asm__ __volatile__("mrc p15, 0, %0, c0, c0, 0" : "=r"(Midr));
+    Status = RtlStringCchPrintfW(Expected, RTL_NUMBER_OF(Expected), L"ARM MIDR %08lx", Midr);
+    if (!NT_SUCCESS(Status))
+    {
+        ZwClose(Key);
+        return Status;
+    }
+    RtlInitUnicodeString(&ExpectedString, Expected);
+    RtlInitUnicodeString(&ActualString, (PWCHAR)Information->Data);
+    if (!Midr || !RtlEqualUnicodeString(&ExpectedString, &ActualString, FALSE))
+    {
+        DbgPrint("ARM processor identity mismatch: hardware MIDR=%08lx registry=%wZ\n", Midr, &ActualString);
+        ZwClose(Key);
+        return STATUS_DATA_ERROR;
+    }
+    RtlInitUnicodeString(&Value, L"ProcessorNameString");
+    Status = ZwQueryValueKey(Key, &Value, KeyValuePartialInformation, Buffer, sizeof(Buffer), &Length);
     ZwClose(Key);
     if (!NT_SUCCESS(Status)) return Status;
     if (Length < FIELD_OFFSET(KEY_VALUE_PARTIAL_INFORMATION, Data) || Length > sizeof(Buffer) ||
@@ -103,7 +137,13 @@ static NTSTATUS ArmProcessorIdentity(VOID)
         Information->DataLength > Length - FIELD_OFFSET(KEY_VALUE_PARTIAL_INFORMATION, Data) ||
         ((PWCHAR)Information->Data)[Information->DataLength / sizeof(WCHAR) - 1] != UNICODE_NULL)
         return STATUS_DATA_ERROR;
-    DbgPrint("ARM processor identity tests: PASS (HARDWARE registry identifier)\n");
+    RtlInitUnicodeString(&ActualString, (PWCHAR)Information->Data);
+    if (Midr >> 24 == 0x41 && ((Midr >> 4) & 0xfff) == 0xc0f)
+    {
+        RtlInitUnicodeString(&ExpectedString, L"ARM Cortex-A15");
+        if (!RtlEqualUnicodeString(&ExpectedString, &ActualString, FALSE)) return STATUS_DATA_ERROR;
+    }
+    DbgPrint("ARM processor identity tests: PASS (MIDR=%08lx, name=%wZ)\n", Midr, &ActualString);
     return STATUS_SUCCESS;
 }
 
