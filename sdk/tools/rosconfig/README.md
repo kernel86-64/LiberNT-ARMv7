@@ -7,17 +7,16 @@ with gcc, clang or MSVC.
 
 ## Usage
 
+```sh
+./menuconfig.sh --build-dir output-Clang-arm-debug
+./configure.sh --clang -a arm menuconfig \
+    -DSARCH=virt -DOPTIMIZE=0 -DKD_DEBUGGER=NONE
+./menuconfig.sh --build-dir output-Clang-arm-debug --self-test
 ```
-./menuconfig.sh              # first run: prepare output-Clang-amd64-debug
-menuconfig.cmd               # Windows: prepare output-MinGW-amd64-debug
-./menuconfig.sh --build-dir output-Clang-arm64-debug
-menuconfig.cmd --build-dir output-Clang-arm64-debug
-                              # open one output tree's configuration UI
-./configure.sh menuconfig    # choose the target, then configure its output tree
-configure.cmd menuconfig     # Windows: configure the selected output tree
-./menuconfig.sh --self-test  # build the tool and run its non-interactive tests
-menuconfig.cmd --self-test   # same test on Windows
-```
+
+These examples select the ARMv7 QEMU build. See the repository
+[README](../../../README.md#building-libernt-yourself) for toolchain setup,
+the full image target and the QEMU launch command.
 
 Inside the UI, `Enter`/`Right` opens a submenu or edits an option;
 `ESC`/`Left`/`Backspace` returns to the parent menu. `Space` toggles or

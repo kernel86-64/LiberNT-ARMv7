@@ -21,7 +21,7 @@ LiberNT はクリーンルームで開発されています。Windows SDK と WD
 
 ### バグを報告する
 
-バグは [Issues](https://github.com/LiberNT/LiberNT/issues) で報告してください。アーキテクチャ（amd64、i386、arm64、riscv64）、ビルドの種類、ビルドしたコミット、問題に至る手順を書いてください。シリアルポートのデバッグログがあると大いに役立ちます。
+バグは [Issues](https://github.com/kernel86-64/LiberNT-ARMv7/issues) で報告してください。アーキテクチャ(`ARMv7-A`, `ARCH=arm`, `SARCH=virt`)、ビルドの種類、ビルドしたコミット、問題に至る手順を書いてください。シリアルポートのデバッグログがあると大いに役立ちます。
 
 ### バグを修正する
 
@@ -37,7 +37,7 @@ LiberNT はクリーンルームで開発されています。Windows SDK と WD
 
 ### 新しい機能を実装する
 
-互換性の基準は Windows 11 です。大きな作業を始める前に、すでに誰かが取り組んでいないか [Issues](https://github.com/LiberNT/LiberNT/issues) または [Discord](https://discord.gg/BpcKg7FZ2) で確認してください。
+互換性の基準は Windows 11 です。大きな作業を始める前に、すでに誰かが取り組んでいないか [Issues](https://github.com/kernel86-64/LiberNT-ARMv7/issues) または [Discord](https://discord.gg/BpcKg7FZ2) で確認してください。
 
 ### ドキュメントを書く
 
@@ -57,7 +57,7 @@ Wine と同期しているコンポーネントは [media/doc/WINESYNC.txt](../.
 
 開く前に:
 
-- 作業しているアーキテクチャだけでなく、amd64、i386、arm64 をビルドしてください。
+- [ARMv7 ビルド手順](../../README.md#building-libernt-yourself)に従い `ARCH=arm`、`SARCH=virt` でビルドし、QEMU で検証してください。共有コードの変更が影響する他アーキテクチャのターゲットも、ツールチェーンが利用できる場合はビルドしてください。
 - 変更に関係するテストを起動または実行し、何を実行したかをプルリクエストに書いてください。
 - アーキテクチャ固有のコードはアーキテクチャ層に置いてください。[アーキテクチャ中立性](../../AGENTS.md#architecture-neutrality)を参照してください。
 
@@ -99,7 +99,7 @@ LiberNT と ReactOS を支える人々については [CREDITS.md](../../CREDITS
 
 ## どこから始めるか
 
-- オープンな [Issues](https://github.com/LiberNT/LiberNT/issues) を見てください。
+- オープンな [Issues](https://github.com/kernel86-64/LiberNT-ARMv7/issues) を見てください。
 - 失敗しているテストを見つけ、Windows 11 と比較して、通るようにしてください。
 - ガイドや設計メモは [Wiki](https://github.com/LiberNT/LiberNT/wiki) で読めます。
 - [Discord](https://discord.gg/BpcKg7FZ2) または [Matrix](https://matrix.to/#/#libernt:matrix.org) で助けを求めてください。

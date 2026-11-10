@@ -21,7 +21,7 @@ LiberNT is built clean-room: from the Windows SDK and WDK headers, Windows 11 pu
 
 ### Report bugs
 
-Report bugs in [Issues](https://github.com/LiberNT/LiberNT/issues). Give the architecture (amd64, i386, arm64 or riscv64), the build type, the commit you built and the steps that lead to the problem. A debug log from the serial port helps a lot.
+Report bugs in [Issues](https://github.com/kernel86-64/LiberNT-ARMv7/issues). Give the architecture (`ARMv7-A`, `ARCH=arm`, `SARCH=virt`), the build type, the commit you built and the steps that lead to the problem. A debug log from the serial port helps a lot.
 
 ### Fix bugs
 
@@ -37,7 +37,7 @@ Run LiberNT in a virtual machine or on real hardware and report what breaks. Rea
 
 ### Implement new things
 
-Windows 11 is the compatibility reference. Before starting a larger piece of work, ask in [Issues](https://github.com/LiberNT/LiberNT/issues) or on [Discord](https://discord.gg/BpcKg7FZ2) whether someone is already working on it.
+Windows 11 is the compatibility reference. Before starting a larger piece of work, ask in [Issues](https://github.com/kernel86-64/LiberNT-ARMv7/issues) or on [Discord](https://discord.gg/BpcKg7FZ2) whether someone is already working on it.
 
 ### Write documentation
 
@@ -57,7 +57,7 @@ Send your work as a [pull request] against the `main-nt10` branch. Pull requests
 
 Before you open it:
 
-- Build amd64, i386 and arm64, not only the architecture you work on.
+- Build `ARCH=arm`, `SARCH=virt` using the [ARMv7 instructions](README.md#building-libernt-yourself), and boot it in QEMU. Build affected shared targets for other architectures when their toolchains are available.
 - Boot or run the tests that cover your change, and say in the pull request what you ran.
 - Keep architecture-specific code in the architecture layer. See [Architecture neutrality](AGENTS.md#architecture-neutrality).
 
@@ -99,7 +99,7 @@ See [CREDITS.md](CREDITS.md) for the people behind LiberNT and ReactOS.
 
 ## Where To Start?
 
-- Look at the open [Issues](https://github.com/LiberNT/LiberNT/issues).
+- Look at the open [Issues](https://github.com/kernel86-64/LiberNT-ARMv7/issues).
 - Find a test that fails, compare it with Windows 11, and make it pass.
 - Read the [Wiki](https://github.com/LiberNT/LiberNT/wiki) for guides and design notes.
 - Ask for help on [Discord](https://discord.gg/BpcKg7FZ2) or [Matrix](https://matrix.to/#/#libernt:matrix.org).

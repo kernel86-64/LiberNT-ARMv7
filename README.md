@@ -5,29 +5,24 @@
 </p>
 
 > [!IMPORTANT]
-> LiberNT is in active development. The builds on the [Releases](https://github.com/LiberNT/LiberNT/releases) page are Debug pre-releases for testing: run them in a virtual machine or on spare hardware, not on a computer you depend on.
+> This fork targets ARMv7-A (32-bit ARM) on QEMU virt with a Cortex-A15. Build the ARM32 image from this repository using the instructions below. Real hardware bring-up is a later milestone.
 
 <div align="center">
 
-# [LiberNT](https://libernt.com)
-### A free NT operating system
+# [LiberNT-ARMv7](https://github.com/kernel86-64/LiberNT-ARMv7)
+### An ARMv7-A fork of LiberNT
 
-**Built out of love for the NT architecture. Windows® 11 compatible, for amd64, arm64 and riscv64.**
+**32-bit ARM, QEMU virt, Cortex-A15. EDK II UEFI → FreeLoader → LiberNT.**
 
-[![Build](https://img.shields.io/github/actions/workflow/status/LiberNT/LiberNT/build.yml?branch=main-nt10&label=Build&style=for-the-badge&logo=githubactions&logoColor=white)](https://github.com/LiberNT/LiberNT/actions/workflows/build.yml)
 [![License: GPL 3.0](https://img.shields.io/badge/License-GPL_3.0-0161B6?style=for-the-badge&logo=gnu&logoColor=white)](#license)
 [![Discord](https://img.shields.io/badge/Discord-Join-5865F2?style=for-the-badge&logo=discord&logoColor=white)](https://discord.gg/BpcKg7FZ2)
 [![Matrix](https://img.shields.io/badge/Matrix-%23libernt-000000?style=for-the-badge&logo=matrix&logoColor=white)](https://matrix.to/#/#libernt:matrix.org)
 
-<img src="https://img.shields.io/github/repo-size/LiberNT/LiberNT?style=flat-square&color=blue" alt="Repo Size">
-<img src="https://img.shields.io/github/stars/LiberNT/LiberNT?style=flat-square&color=yellow" alt="Stars">
-<img src="https://img.shields.io/github/forks/LiberNT/LiberNT?style=flat-square&color=lightgrey" alt="Forks">
-<img src="https://img.shields.io/github/last-commit/LiberNT/LiberNT/main-nt10?style=flat-square&color=green" alt="Last Commit">
-<img src="https://img.shields.io/github/issues/LiberNT/LiberNT?style=flat-square&color=orange" alt="Issues">
-
-<br>
-
-[![Download the latest build](https://img.shields.io/badge/Download-Latest_build-0161B6?style=for-the-badge&logo=github&logoColor=white)](https://github.com/LiberNT/LiberNT/releases)
+<img src="https://img.shields.io/github/repo-size/kernel86-64/LiberNT-ARMv7?style=flat-square&color=blue" alt="Repo Size">
+<img src="https://img.shields.io/github/stars/kernel86-64/LiberNT-ARMv7?style=flat-square&color=yellow" alt="Stars">
+<img src="https://img.shields.io/github/forks/kernel86-64/LiberNT-ARMv7?style=flat-square&color=lightgrey" alt="Forks">
+<img src="https://img.shields.io/github/last-commit/kernel86-64/LiberNT-ARMv7/main-nt10?style=flat-square&color=green" alt="Last Commit">
+<img src="https://img.shields.io/github/issues/kernel86-64/LiberNT-ARMv7?style=flat-square&color=orange" alt="Issues">
 
 </div>
 
@@ -41,17 +36,9 @@
 
 ---
 
-<p align="center">
-  <img width="1000" alt="The LiberNT desktop on arm64" src="media/graphics/screenshots/libernt-desktop-arm64.png">
-</p>
+This repository is the **ARMv7-A (32-bit ARM) fork of [LiberNT](https://github.com/LiberNT/LiberNT)**, which is derived from ReactOS. The initial platform is **QEMU virt with a Cortex-A15**, booting through **EDK II UEFI → FreeLoader → LiberNT**.
 
-<p align="center"><sub>The LiberNT desktop on arm64, from build nt10.0-043-2555 in QEMU</sub></p>
-
----
-
-LiberNT is a free NT operating system. The name says it: *liber* is Latin for **free**. It targets **Windows® 11 compatibility**, with room for freestyle and experimental features.
-
-LiberNT brings extensive work on kernel-space components and drivers, aimed at stability and modern hardware, and it focuses on 64-bit platforms: **amd64, arm64 and riscv64**.
+The fork retains LiberNT’s NVS memory manager and NT10 compatibility goals. The full native ARM32 image reaches the desktop with working VirtIO keyboard and pointer input. Windows 11 remains the reference for shared API behavior; ARM32 processor and firmware behavior follows ARM32 documentation.
 
 Our goal is a system that stays maintainable in the long run: **stable, reliable and efficient**, running on embedded devices too, and able to support every feature a modern operating system should have.
 
@@ -65,9 +52,9 @@ Our goal is a system that stays maintainable in the long run: **stable, reliable
 - [What LiberNT Includes](#what-libernt-includes)
 - [Supported Platforms](#supported-platforms)
 - [Getting Started](#getting-started)
-  - [Step 1: Download a Build](#step-1-download-a-build)
+  - [Step 1: Build the ARMv7 Image](#step-1-build-the-armv7-image)
   - [Step 2: Boot It](#step-2-boot-it)
-  - [Step 3: Install LiberNT](#step-3-install-libernt)
+  - [Step 3: First Boot](#step-3-first-boot)
 - [Building LiberNT Yourself](#building-libernt-yourself)
 - [Build Hosts](#build-hosts)
 - [Project Structure](#project-structure)
@@ -80,165 +67,114 @@ Our goal is a system that stays maintainable in the long run: **stable, reliable
 
 ## What LiberNT Includes
 
-LiberNT brings modern hardware and platforms to the NT architecture.
-
-| Feature | What it means for you |
+| Component | ARMv7 status |
 | --- | --- |
-| **64-bit first** | The kernel, HAL and FreeLoader run on amd64, arm64 and riscv64. |
-| **UEFI boot** | Boots on UEFI firmware, with a GOP framebuffer and early display support. The preinstalled disk boots with UEFI or BIOS. |
-| **Modern buses and storage** | PCIe, PCI, Plug and Play, USB with xHCI, SD/eMMC, and storage and bus drivers. |
-| **Board support** | Real boards, including the Raspberry Pi and its RP1 I/O controller. |
-| **The Windows 11 driver model** | Windows 11 (NT10) compatibility and driver-model work, checked against Windows 11 itself. |
-| **Graphics and x86 apps on Arm** | The graphics driver model with Mesa, and WoW64 with FEX, are build options you can switch on. |
-| **LiberNT Setup** | Lists drives the way Windows Setup does, creates, deletes, formats, shrinks and extends partitions, and installs LiberNT on NTFS with the EFI system partition it needs. |
-| **Your own build** | `menuconfig` lets you choose the target, compiler and build type, and switch features on or off. |
+| **ARM32 kernel and HAL** | ARMv7-A on QEMU virt, one Cortex-A15 CPU, with NVS. |
+| **UEFI boot** | ARM32 EDK II loads FreeLoader from the EFI System Partition. |
+| **Storage** | VirtIO block storage and an NTFS system partition containing `C:\Windows`. |
+| **Input** | VirtIO keyboard and absolute pointer through HID. |
+| **Desktop** | Explorer, the Aero theme, fonts and the standard native application set. |
+| **Verified applications** | winver, system properties, Notepad, Calculator, Registry Editor and Task Manager. |
+| **Boot tests** | EFI regressions, native ARM page-table checks and a bounded headless QEMU harness. |
 
-> [!TIP]
-> Each build on the [Releases](https://github.com/LiberNT/LiberNT/releases) page lists what changed since the previous one.
+See [ARMV7_PORT.md](media/doc/ARMV7_PORT.md) for the tested milestones, reference sources and remaining platform gaps.
 
 ---
 
 ## Supported Platforms
 
-| Architecture | Prebuilt images | Build from source | Notes |
-| --- | :---: | :---: | --- |
-| **amd64** | ✓ | ✓ | Clang (default) or GCC |
-| **arm64** | ✓ | ✓ | Includes Raspberry Pi support |
-| **riscv64** | ✓ | ✓ | A separate image is built for JH7110 boards |
-| **i386** | | ✓ | 32-bit x86 |
+| Target | Build configuration | Tested platform |
+| --- | --- | --- |
+| **ARMv7-A, 32-bit ARM** | RosBE Clang, `ARCH=arm`, `SARCH=virt`, Debug | QEMU virt, Cortex-A15, one CPU, 512 MiB RAM |
 
-Release builds also include PowerPC images.
+This fork’s build and boot instructions use ARMv7. Real hardware support is planned after the QEMU port.
 
 ---
 
 ## Getting Started
 
-### Step 1: Download a Build
+### Step 1: Build the ARMv7 Image
 
-Every build on the [Releases](https://github.com/LiberNT/LiberNT/releases) page comes as one ZIP file per image and architecture:
-
-| File | What it is |
-| --- | --- |
-| `bootcd-iso-…-<arch>-…zip` | `bootcd.iso`, a CD image that runs LiberNT or starts LiberNT Setup |
-| `LiberNT-img-…-<arch>-…zip` | `LiberNT.img`, a disk with LiberNT already installed |
-| `LiberNT-vhd-…-<arch>-…zip` | `LiberNT.vhd`, the same preinstalled disk for VHD-based virtual machines |
-| `LiberNT-vhdx-…-<arch>-…zip` | `LiberNT.vhdx`, the same preinstalled disk for Hyper-V Generation 2 |
-
-> [!NOTE]
-> These are Clang Debug builds, made by GitHub Actions from the `main-nt10` branch.
+Follow [Building LiberNT Yourself](#building-libernt-yourself). The full image is `output-Clang-arm-debug/LiberNT.img` (1.5 GiB), with a 64 MiB EFI System Partition and an NTFS system partition.
 
 ### Step 2: Boot It
 
-The quickest way to try LiberNT is the preinstalled disk:
+Install `qemu-system-arm` and the ARM32 EDK II firmware. The paths below match the development host; adjust them if your distribution installs firmware elsewhere.
 
-1. Unzip `LiberNT.img` (or `LiberNT.vhd`)
-2. Start it in a virtual machine such as **QEMU**, or use the VHD in **VirtualBox** or a **Hyper-V** Generation 1 virtual machine. Hyper-V Generation 2 takes only `LiberNT.vhdx`, with Secure Boot turned off
-3. Or write `LiberNT.img` to a USB drive or an SD card and boot the machine from it. It boots with UEFI or BIOS
+Run these commands **from the repository root**, after the build has finished. Create a writable variables file once, preserving it on subsequent boots:
 
-> [!CAUTION]
-> Writing `LiberNT.img` to a USB drive or an SD card erases everything on it. Double-check the target device first.
+```sh
+test -f output-Clang-arm-debug/QEMU_VARS.fd || \
+    cp /usr/share/qemu/edk2-arm-vars.fd output-Clang-arm-debug/QEMU_VARS.fd
 
-### Step 3: Install LiberNT
+qemu-system-arm -machine virt -cpu cortex-a15 -m 512 -smp 1 \
+    -drive if=pflash,format=raw,readonly=on,file=/usr/share/qemu/edk2-arm-code.fd \
+    -drive if=pflash,format=raw,file=output-Clang-arm-debug/QEMU_VARS.fd \
+    -drive if=none,format=raw,id=os,file=output-Clang-arm-debug/LiberNT.img \
+    -device virtio-blk-device,drive=os -device ramfb \
+    -global virtio-mmio.force-legacy=false \
+    -device virtio-keyboard-device -device virtio-tablet-device \
+    -nic none -serial stdio -monitor none
+```
 
-Boot `bootcd.iso` in a virtual machine or on a PC, and follow the instructions of **LiberNT Setup**.
+Stop QEMU before rebuilding or replacing the image or firmware variables. Keep `-smp 1`; ARM32 SMP is not implemented in this port.
 
-The preinstalled disk also carries LiberNT Setup. Run `C:\<architecture>\libernt.exe`, for example `C:\arm64\libernt.exe`, to install LiberNT on another disk from the running system.
+### Step 3: First Boot
 
-> [!CAUTION]
-> Setup can delete and format partitions. Back up anything important on the target disk before you install.
+Allow the preinstalled image to finish mini setup. The initial session uses **Administrator with an empty password**, with automatic logon enabled. Subsequent boots retain the profile.
 
-See [INSTALL.md](INSTALL.md) for the full installation guide.
+See [INSTALL.md](INSTALL.md) for the ARMv7 image workflow and [ARMV7_PORT.md](media/doc/ARMV7_PORT.md) for headless tests and debugging.
 
 ---
 
 ## Building LiberNT Yourself
 
-LiberNT builds with RosBE, a cross-build toolchain. The steps below work on Linux and macOS, and on Windows through WSL2.
+The validated configuration is a Linux host with the **RosBE Clang/LLVM** cross toolchain, targeting **ARMv7-A**.
 
 ### 1. Install the toolchain
 
-You need Git, CMake, Ninja and a C/C++ compiler for your own machine. RosBE adds the compilers that build LiberNT.
+Install Git, CMake, Ninja, Flex, Bison, Python 3 and a host C/C++ compiler. For QEMU tests, also install `qemu-system-arm`, ARM32 EDK II firmware, mtools, dosfstools and GDB with ARM support. Ensure the LLVM command-line tools, including `llvm-readobj`, are available on `PATH`.
+
+Install RosBE using the upstream toolchain bootstrap:
 
 ```sh
 curl -fsSL https://raw.githubusercontent.com/LiberNT/libernt-build-toolchain/main/rosbe-unix-bootstrap.sh | sh
 ```
 
-> [!TIP]
-> On Windows, we suggest WSL2. Install it with `wsl --install`, open the Linux terminal it adds, and follow the Linux steps there. Keep the source inside the Linux file system rather than under `/mnt/c`, where builds run slower.
-
-### 2. Get the source
+### 2. Get this fork
 
 ```sh
-git clone https://github.com/LiberNT/LiberNT.git
-cd LiberNT
+git clone --branch main-nt10 https://github.com/kernel86-64/LiberNT-ARMv7.git
+cd LiberNT-ARMv7
 ```
 
-> [!NOTE]
-> The first configure run also fetches the submodule and external sources the build needs.
+### 3. Configure and build ARMv7
 
-### 3. Configure
+Run from the repository root:
 
 ```sh
-./configure.sh
+CCACHE_DISABLE=1 ./configure.sh --clang -a arm \
+    -DSARCH=virt -DKD_DEBUGGER=NONE -DOPTIMIZE=0
+cmake -S . -B output-Clang-arm-debug \
+    '-DFREELDR_PREINSTALL_OPTIONS=/DEBUG /DEBUGPORT=COM1 /BAUDRATE=115200'
+CCACHE_DISABLE=1 ninja -C output-Clang-arm-debug liberntimg -j8
 ```
 
-With no options, this sets up an AMD64 Debug build with Clang in the folder `output-Clang-amd64-debug`. The folder name always follows the pattern `output-<compiler>-<architecture>-<debug|release>`.
+The configure step fetches the external sources selected by the build. Use `--no-feeds-update` on later configure runs when those sources are already present and you need an offline build.
 
-| Option | What it does |
-| --- | --- |
-| `-a`, `--arch <arch>` | Chooses the target architecture: `amd64` (default), `i386`, `arm64` or `riscv64`. |
-| `--clang` | Builds with Clang/LLVM from RosBE. This is the default. |
-| `--gcc` | Builds with GCC from RosBE instead of Clang. The macOS RosBE does not include GCC. |
-| `-r`, `--release` | Makes an optimized Release build. Without it you get a Debug build, which is easier to debug. |
-| `menuconfig` | Opens a menu to choose optional components first. Your choices are kept in the output folder. |
-| `makefiles` | Uses `make` instead of Ninja. |
-| `--no-feeds-update` | Skips fetching the external sources listed in `feeds.conf`, for example when offline. |
-| `-D<name>=<value>` | Passes a setting straight to CMake. |
+`-a arm` selects 32-bit ARM, `-DSARCH=virt` selects QEMU virt, and the output directory is `output-Clang-arm-debug`. Keep `-DOPTIMIZE=0` for the current Clang exception-handling limitation described in [ARMV7_PORT.md](media/doc/ARMV7_PORT.md). Compiler caching is disabled for these builds.
 
-For example:
+`liberntimg` builds and packages the full native installation into `output-Clang-arm-debug/LiberNT.img`. Reuse this build directory and image for subsequent builds, with QEMU stopped while the image is rebuilt.
 
-```sh
-./configure.sh -a arm64              # ARM64 Debug build with Clang
-./configure.sh -a i386 --gcc         # 32-bit x86 build with GCC
-./configure.sh -a amd64 --release    # optimized AMD64 build
-```
-
-For a more personalized build, add `menuconfig`:
-
-```sh
-./configure.sh menuconfig
-```
-
-It opens a menu, much like the Linux kernel's, where you choose the target, compiler and build type, and switch features on or off: code generation and tuning, graphics driver model and Mesa, WoW64 and FEX, kernel debugging, test runs and more. Press `?` on any option for help, `S` to save and `Q` to quit. Your choices are saved in the output folder and used every time you configure it again.
-
-### 4. Build
-
-Go to the output folder and run Ninja with the target you want:
-
-```sh
-cd output-Clang-amd64-debug
-ninja liberntimg
-```
-
-| Command | Creates | Use it to |
-| --- | --- | --- |
-| `ninja bootcd` | `bootcd.iso` | Install LiberNT from a CD image, in a virtual machine or on a PC. |
-| `ninja liberntimg` | `LiberNT.img` | Boot a disk with LiberNT already installed. Start it in a virtual machine such as QEMU, or write it to a USB drive or SD card. It boots with UEFI or BIOS. |
-| `ninja liberntvhd` | `LiberNT.vhd`, `LiberNT.vhdx` | Use the same preinstalled disk in virtual machines: the VHD in VirtualBox and Hyper-V Generation 1, the VHDX in Hyper-V Generation 2, which does not take VHD disks. |
-
-Each target builds everything it needs first, and the files are written to the output folder.
+For optional EFI regression tests, follow [Build and boot tests](media/doc/ARMV7_PORT.md#build-and-boot-tests).
 
 ---
 
 ## Build Hosts
 
-| Host | Compilers | Notes |
-| --- | --- | --- |
-| **Linux** x86_64 / aarch64 | Clang and GCC | The full RosBE toolchain |
-| **macOS** Intel / Apple Silicon | Clang | RosBE has no GCC build for macOS |
-| **Windows** | Clang and GCC | Through WSL2, following the Linux steps |
+The ARMv7 port has been built and tested on **Linux with RosBE Clang/LLVM**. The host architecture and the target architecture are separate: even on an x86_64 build host, the commands above produce ARM32 binaries.
 
-On every host, install Git, CMake, Ninja, Flex and Bison from your package manager. RosBE provides only the cross compilers. Prebuilt toolchains live in [LiberNT/libernt-build-toolchain](https://github.com/LiberNT/libernt-build-toolchain).
+The toolchain is maintained upstream in [LiberNT/libernt-build-toolchain](https://github.com/LiberNT/libernt-build-toolchain).
 
 ---
 
@@ -267,9 +203,9 @@ LiberNT/
 
 ## Contributing
 
-Report bugs and suggest features in [Issues](https://github.com/LiberNT/LiberNT/issues), and find guides and notes in the [Wiki](https://github.com/LiberNT/LiberNT/wiki).
+Report bugs and suggest features in [Issues](https://github.com/kernel86-64/LiberNT-ARMv7/issues), and find guides and notes in the [Wiki](https://github.com/LiberNT/LiberNT/wiki).
 
-See [CONTRIBUTING.md](CONTRIBUTING.md) and [PULL_REQUEST_MANAGEMENT.md](PULL_REQUEST_MANAGEMENT.md). If you're planning a larger change, ask in [Issues](https://github.com/LiberNT/LiberNT/issues) or on [Discord](https://discord.gg/BpcKg7FZ2) first.
+See [CONTRIBUTING.md](CONTRIBUTING.md) and [PULL_REQUEST_MANAGEMENT.md](PULL_REQUEST_MANAGEMENT.md). If you're planning a larger change, ask in [Issues](https://github.com/kernel86-64/LiberNT-ARMv7/issues) or on [Discord](https://discord.gg/BpcKg7FZ2) first.
 
 > [!WARNING]
 > **Legal notice:** If you have seen proprietary Microsoft Windows source code (including but not limited to the leaked Windows NT 3.5, NT 4, 2000 source code and the Windows Research Kernel), your contribution won't be accepted because of potential copyright violation.
@@ -306,10 +242,12 @@ LiberNT is an independent project. It is not affiliated with, endorsed by or spo
 
 ## About
 
-LiberNT is built by the **LiberNT contributors**. It was started by [Ahmed Arif](https://github.com/ahmedarif193) and is maintained by [Ahmed Arif](https://github.com/ahmedarif193), [Ostap Brehin](https://github.com/osbre) and [Vivyy](https://github.com/enginelesscc).
+This ARMv7 fork is maintained at [kernel86-64/LiberNT-ARMv7](https://github.com/kernel86-64/LiberNT-ARMv7).
+
+Upstream LiberNT is built by the **LiberNT contributors**. It was started by [Ahmed Arif](https://github.com/ahmedarif193) and is maintained by [Ahmed Arif](https://github.com/ahmedarif193), [Ostap Brehin](https://github.com/osbre) and [Vivyy](https://github.com/enginelesscc).
 
 - [Visit the LiberNT organization](https://github.com/LiberNT)
 - [Website](https://libernt.com)
-- [Download the latest build](https://github.com/LiberNT/LiberNT/releases)
+- [Build the ARMv7 image](#building-libernt-yourself)
 - [Wiki](https://github.com/LiberNT/LiberNT/wiki)
 - Chat on [Discord](https://discord.gg/BpcKg7FZ2) or [Matrix](https://matrix.to/#/#libernt:matrix.org)

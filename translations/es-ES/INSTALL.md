@@ -2,28 +2,20 @@
 
 > [English](../../INSTALL.md) | [中文](../zh-CN/INSTALL.md) | [Français](../fr-FR/INSTALL.md) | **Español** | [日本語](../ja-JP/INSTALL.md) | [العربية](../ar-MA/INSTALL.md) | [Українська](../uk-UA/INSTALL.md)
 
-## Compilar las imágenes
+Este repositorio es un **fork de LiberNT para ARMv7-A (ARM de 32 bits)**, destinado a QEMU virt con Cortex-A15. Arranque: EDK II UEFI → FreeLoader → LiberNT.
 
-Prepara el entorno de compilación y configura una compilación como se describe en [Compilar LiberNT por tu cuenta](README.md#compilar-libernt-por-tu-cuenta). Después compila la imagen que necesites desde la carpeta de salida, por ejemplo `output-Clang-amd64-debug`:
+Instala RosBE Clang/LLVM y ejecuta los siguientes comandos para configurar ARMv7 y construir la imagen completa. Las dependencias y la instalación de la herramienta están en el [README principal](../../README.md#building-libernt-yourself).
 
-| Comando | Crea | Sirve para |
-|---|---|---|
-| `ninja bootcd` | `bootcd.iso` | Ejecutar LiberNT desde una imagen de CD, o iniciar desde ella la instalación de LiberNT e instalar LiberNT en un disco. |
-| `ninja liberntimg` | `LiberNT.img` | Arrancar un disco con LiberNT ya instalado. Arranca con UEFI o BIOS. |
-| `ninja liberntvhd` | `LiberNT.vhd`, `LiberNT.vhdx` | Usar el mismo disco preinstalado en máquinas virtuales: el VHD en VirtualBox y en Hyper-V de generación 1, el VHDX en Hyper-V de generación 2, que no acepta discos VHD. |
+```sh
+CCACHE_DISABLE=1 ./configure.sh --clang -a arm \
+    -DSARCH=virt -DKD_DEBUGGER=NONE -DOPTIMIZE=0
+cmake -S . -B output-Clang-arm-debug \
+    '-DFREELDR_PREINSTALL_OPTIONS=/DEBUG /DEBUGPORT=COM1 /BAUDRATE=115200'
+CCACHE_DISABLE=1 ninja -C output-Clang-arm-debug liberntimg -j8
+```
 
-Cada destino compila primero todo lo que necesita, y los archivos se escriben en la carpeta de salida.
+Usa el [comando QEMU del README principal](../../README.md#step-2-boot-it), con firmware ARM32 y un archivo `QEMU_VARS.fd` con permiso de escritura.
 
-## Instalar desde el CD de instalación
+Espera a que termine mini setup en el primer arranque. La cuenta inicial es **Administrator, sin contraseña**, con inicio automático. La plataforma validada es QEMU; el hardware real se abordará después.
 
-Arranca `bootcd.iso` en una máquina virtual o en un PC y sigue las instrucciones de la instalación de LiberNT. La instalación muestra las unidades igual que el instalador de Windows, y puede crear, eliminar, formatear, reducir y ampliar particiones. Instala LiberNT en NTFS y crea la partición del sistema EFI que necesita.
-
-## Usar el disco preinstalado
-
-`LiberNT.img` no necesita instalación. Inícialo en una máquina virtual como QEMU, o escríbelo en una unidad USB o una tarjeta SD y arranca el equipo desde ella. Usa `LiberNT.vhd` en las máquinas virtuales que aceptan discos VHD, y `LiberNT.vhdx` en las máquinas virtuales Hyper-V de generación 2, con el arranque seguro desactivado.
-
-El disco preinstalado también incluye la instalación de LiberNT. Ejecuta `C:\<arquitectura>\libernt.exe`, por ejemplo `C:\arm64\libernt.exe`, para instalar LiberNT en otro disco desde el sistema en ejecución.
-
-## Ayuda
-
-Si algo sale mal, infórmalo en [Issues](https://github.com/LiberNT/LiberNT/issues) con la arquitectura, el tipo de compilación, el commit que compilaste y los pasos que llevan al problema. Las guías y notas están en la [Wiki](https://github.com/LiberNT/LiberNT/wiki), y puedes preguntar al equipo en [Discord](https://discord.gg/BpcKg7FZ2) o en [Matrix](https://matrix.to/#/#libernt:matrix.org).
+[ARMv7: tests and platform details](../../media/doc/ARMV7_PORT.md)

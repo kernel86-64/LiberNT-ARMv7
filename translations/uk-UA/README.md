@@ -5,29 +5,24 @@
 </p>
 
 > [!IMPORTANT]
-> LiberNT активно розробляється. Збірки на сторінці [Releases](https://github.com/LiberNT/LiberNT/releases) є попередніми Debug-версіями для тестування: запускайте їх у віртуальній машині або на запасному обладнанні, а не на робочому комп'ютері.
+> Цей репозиторій — **форк LiberNT для ARMv7-A (32-бітний ARM)**. Поточна платформа — QEMU virt із Cortex-A15, ланцюжок завантаження: EDK II UEFI → FreeLoader → LiberNT.
 
 <div align="center">
 
-# [LiberNT](https://libernt.com)
+# [LiberNT-ARMv7](https://github.com/kernel86-64/LiberNT-ARMv7)
 ### Вільна операційна система NT
 
-**Створена з любові до архітектури NT. Сумісна з Windows® 11, для amd64, arm64 та riscv64.**
+**ARMv7-A / ARM32 — QEMU virt, Cortex-A15.**
 
-[![Build](https://img.shields.io/github/actions/workflow/status/LiberNT/LiberNT/build.yml?branch=main-nt10&label=Build&style=for-the-badge&logo=githubactions&logoColor=white)](https://github.com/LiberNT/LiberNT/actions/workflows/build.yml)
 [![License: GPL 3.0](https://img.shields.io/badge/License-GPL_3.0-0161B6?style=for-the-badge&logo=gnu&logoColor=white)](#ліцензія)
 [![Discord](https://img.shields.io/badge/Discord-Join-5865F2?style=for-the-badge&logo=discord&logoColor=white)](https://discord.gg/BpcKg7FZ2)
 [![Matrix](https://img.shields.io/badge/Matrix-%23libernt-000000?style=for-the-badge&logo=matrix&logoColor=white)](https://matrix.to/#/#libernt:matrix.org)
 
-<img src="https://img.shields.io/github/repo-size/LiberNT/LiberNT?style=flat-square&color=blue" alt="Repo Size">
-<img src="https://img.shields.io/github/stars/LiberNT/LiberNT?style=flat-square&color=yellow" alt="Stars">
-<img src="https://img.shields.io/github/forks/LiberNT/LiberNT?style=flat-square&color=lightgrey" alt="Forks">
-<img src="https://img.shields.io/github/last-commit/LiberNT/LiberNT/main-nt10?style=flat-square&color=green" alt="Last Commit">
-<img src="https://img.shields.io/github/issues/LiberNT/LiberNT?style=flat-square&color=orange" alt="Issues">
-
-<br>
-
-[![Download the latest build](https://img.shields.io/badge/Download-Latest_build-0161B6?style=for-the-badge&logo=github&logoColor=white)](https://github.com/LiberNT/LiberNT/releases)
+<img src="https://img.shields.io/github/repo-size/kernel86-64/LiberNT-ARMv7?style=flat-square&color=blue" alt="Repo Size">
+<img src="https://img.shields.io/github/stars/kernel86-64/LiberNT-ARMv7?style=flat-square&color=yellow" alt="Stars">
+<img src="https://img.shields.io/github/forks/kernel86-64/LiberNT-ARMv7?style=flat-square&color=lightgrey" alt="Forks">
+<img src="https://img.shields.io/github/last-commit/kernel86-64/LiberNT-ARMv7/main-nt10?style=flat-square&color=green" alt="Last Commit">
+<img src="https://img.shields.io/github/issues/kernel86-64/LiberNT-ARMv7?style=flat-square&color=orange" alt="Issues">
 
 </div>
 
@@ -41,17 +36,9 @@
 
 ---
 
-<p align="center">
-  <img width="1000" alt="Робочий стіл LiberNT на arm64" src="../../media/graphics/screenshots/libernt-desktop-arm64.png">
-</p>
-
-<p align="center"><sub>Робочий стіл LiberNT на arm64, зі збірки nt10.0-043-2555 у QEMU</sub></p>
-
----
-
 LiberNT — це вільна операційна система NT. Її назва говорить сама за себе: *liber* латиною означає **вільний**. Вона орієнтована на **сумісність із Windows® 11**, залишаючи простір для експериментальних та авторських можливостей.
 
-LiberNT містить масштабну роботу над компонентами простору ядра та драйверами, спрямовану на стабільність і підтримку сучасного обладнання, фокусуючись на 64-бітних платформах: **amd64, arm64 та riscv64**.
+Цей репозиторій — **форк LiberNT для ARMv7-A (32-бітний ARM)**. Поточна платформа — QEMU virt із Cortex-A15, ланцюжок завантаження: EDK II UEFI → FreeLoader → LiberNT.
 
 Наша мета — система, яка залишається зручною для довготривалої підтримки: **стабільна, надійна та ефективна**, здатна працювати також на вбудованих пристроях і підтримувати всі можливості, які повинна мати сучасна операційна система.
 
@@ -80,34 +67,17 @@ LiberNT містить масштабну роботу над компонент
 
 ## Що входить до LiberNT
 
-LiberNT привносить підтримку сучасного обладнання та платформ до архітектури NT.
+Цей репозиторій — **форк LiberNT для ARMv7-A (32-бітний ARM)**. Поточна платформа — QEMU virt із Cortex-A15, ланцюжок завантаження: EDK II UEFI → FreeLoader → LiberNT.
 
-| Можливість | Що це означає для вас |
-| --- | --- |
-| **Орієнтація на 64-бітні системи** | Ядро, HAL та FreeLoader працюють на amd64, arm64 та riscv64. |
-| **Завантаження через UEFI** | Завантажується на мікропрограмах UEFI з фреймбуфером GOP та ранньою підтримкою дисплея. Попередньо встановлений диск завантажується як через UEFI, так і через BIOS. |
-| **Сучасні шини та накопичувачі** | PCIe, PCI, Plug and Play, USB з xHCI, SD/eMMC, а також драйвери накопичувачів і шин. |
-| **Підтримка плат** | Реальні плати, включно з Raspberry Pi та його контролером введення-виведення RP1. |
-| **Модель драйверів Windows 11** | Сумісність із Windows 11 (NT10) та реалізація моделі драйверів, перевірені щодо самої Windows 11. |
-| **Графіка та x86-застосунки на Arm** | Графічна модель драйверів із Mesa, а також WoW64 з FEX доступні як опції збирання, які можна ввімкнути. |
-| **LiberNT Setup** | Відображає диски так само, як і програма встановлення Windows, створює, видаляє, форматує, зменшує та розширює розділи, а також встановлює LiberNT на NTFS із необхідним системним розділом EFI. |
-| **Власна збірка** | `menuconfig` дозволяє вибирати цільову архітектуру, компілятор, тип збірки та вмикати чи вимикати потрібні можливості. |
-
-> [!TIP]
-> Кожна збірка на сторінці [Releases](https://github.com/LiberNT/LiberNT/releases) містить список змін, внесених із часу попереднього випуску.
+[ARMv7: tested components and milestones](../../media/doc/ARMV7_PORT.md)
 
 ---
 
 ## Підтримувані платформи
 
-| Архітектура | Попередньо зібрані образи | Збирання з вихідного коду | Примітки |
-| --- | :---: | :---: | --- |
-| **amd64** | ✓ | ✓ | Clang (за замовчуванням) або GCC |
-| **arm64** | ✓ | ✓ | Включає підтримку Raspberry Pi |
-| **riscv64** | ✓ | ✓ | Окремий образ збирається для плат JH7110 |
-| **i386** | | ✓ | 32-бітна x86 |
+**ARMv7-A / ARM32 — QEMU virt, Cortex-A15, 1 CPU, 512 MiB RAM.**
 
-Релізні збірки також включають образи для PowerPC.
+Перехресне збирання ARMv7 перевірено на Linux із RosBE Clang/LLVM. Цільова архітектура не залежить від архітектури хоста.
 
 ---
 
@@ -115,130 +85,42 @@ LiberNT привносить підтримку сучасного обладн�
 
 ### Крок 1: Завантажте збірку
 
-Кожна збірка на сторінці [Releases](https://github.com/LiberNT/LiberNT/releases) постачається як один ZIP-файл для кожного образу та архітектури:
-
-| Файл | Що це таке |
-| --- | --- |
-| `bootcd-iso-…-<arch>-…zip` | `bootcd.iso`, образ CD, що запускає LiberNT або інсталятор LiberNT Setup |
-| `LiberNT-img-…-<arch>-…zip` | `LiberNT.img`, диск із уже встановленою LiberNT |
-| `LiberNT-vhd-…-<arch>-…zip` | `LiberNT.vhd`, той самий попередньо встановлений диск для віртуальних машин на основі VHD |
-| `LiberNT-vhdx-…-<arch>-…zip` | `LiberNT.vhdx`, той самий диск для Hyper-V Generation 2 |
-
-> [!NOTE]
-> Це Debug-збірки, скомпільовані Clang автоматично через GitHub Actions із гілки `main-nt10`.
+Установіть RosBE Clang/LLVM і виконайте наведені команди для налаштування ARMv7 та збирання повного образу. Залежності й установлення інструментарію описані в [основному README](../../README.md#building-libernt-yourself).
 
 ### Крок 2: Завантажте систему
 
-Найшвидший спосіб спробувати LiberNT — скористатися попередньо встановленим диском:
-
-1. Розархівуйте `LiberNT.img` (або `LiberNT.vhd`)
-2. Запустіть його у віртуальній машині, як-от **QEMU**, або використовуйте VHD у **VirtualBox** чи у віртуальній машині **Hyper-V** Generation 1. Для Hyper-V Generation 2 використовуйте `LiberNT.vhdx` із вимкненим Secure Boot
-3. Або запишіть `LiberNT.img` на USB-накопичувач чи карту SD і завантажте з нього комп'ютер. Він завантажується через UEFI або BIOS
-
-> [!CAUTION]
-> Запис `LiberNT.img` на USB-накопичувач або карту SD стирає всі дані на ній. Обов'язково ретельно перевірте цільовий пристрій перед записом.
+Використовуйте [команду QEMU з основного README](../../README.md#step-2-boot-it), прошивку ARM32 і файл змінних `QEMU_VARS.fd`, доступний для запису.
 
 ### Крок 3: Встановіть LiberNT
 
-Завантажте `bootcd.iso` у віртуальній машині або на комп'ютері та дотримуйтесь інструкцій **LiberNT Setup**.
-
-Попередньо встановлений диск також містить інсталятор LiberNT Setup. Запустіть `C:\<architecture>\libernt.exe`, наприклад `C:\arm64\libernt.exe`, щоб встановити LiberNT на інший диск із запущеної системи.
-
-> [!CAUTION]
-> Програма встановлення може видаляти та форматувати розділи. Створіть резервну копію всіх важливих даних на цільовому диску перед початком встановлення.
-
-Повний посібник зі встановлення наведено в [INSTALL.md](INSTALL.md).
+Під час першого завантаження дочекайтеся завершення mini setup. Початковий обліковий запис — **Administrator, пароль порожній**, автоматичний вхід увімкнено. Перевірена платформа — QEMU; реальне обладнання буде наступним етапом.
 
 ---
 
 ## Збирання LiberNT власноруч
 
-LiberNT збирається за допомогою крос-інструментарію RosBE. Наведені нижче кроки працюють на Linux та macOS, а також у Windows через WSL2.
-
-### 1. Встановіть інструментарій
-
-Вам знадобляться Git, CMake, Ninja та компілятор C/C++ для вашої поточної системи. RosBE додає компілятори, які збирають LiberNT.
+Установіть RosBE Clang/LLVM і виконайте наведені команди для налаштування ARMv7 та збирання повного образу. Залежності й установлення інструментарію описані в [основному README](../../README.md#building-libernt-yourself).
 
 ```sh
-curl -fsSL https://raw.githubusercontent.com/LiberNT/libernt-build-toolchain/main/rosbe-unix-bootstrap.sh | sh
+git clone --branch main-nt10 https://github.com/kernel86-64/LiberNT-ARMv7.git
+cd LiberNT-ARMv7
+
+CCACHE_DISABLE=1 ./configure.sh --clang -a arm \
+    -DSARCH=virt -DKD_DEBUGGER=NONE -DOPTIMIZE=0
+cmake -S . -B output-Clang-arm-debug \
+    '-DFREELDR_PREINSTALL_OPTIONS=/DEBUG /DEBUGPORT=COM1 /BAUDRATE=115200'
+CCACHE_DISABLE=1 ninja -C output-Clang-arm-debug liberntimg -j8
 ```
 
-> [!TIP]
-> У Windows ми рекомендуємо використовувати WSL2. Встановіть його за допомогою команди `wsl --install`, відкрийте термінал Linux, який з'явиться, і виконуйте наведені інструкції для Linux. Зберігайте вихідний код у файловій системі Linux, а не в `/mnt/c`, де збирання виконується повільніше.
+`output-Clang-arm-debug/LiberNT.img`
 
-### 2. Отримайте вихідний код
-
-```sh
-git clone https://github.com/LiberNT/LiberNT.git
-cd LiberNT
-```
-
-> [!NOTE]
-> Перший запуск конфігурації також завантажує сабмодуль та зовнішні вихідні тексти, необхідні для збирання.
-
-### 3. Налаштування (Configure)
-
-```sh
-./configure.sh
-```
-
-Без параметрів це налаштує збірку AMD64 Debug з Clang у папці `output-Clang-amd64-debug`. Назва папки завжди відповідає шаблону `output-<компілятор>-<архітектура>-<debug|release>`.
-
-| Параметр | Що він робить |
-| --- | --- |
-| `-a`, `--arch <arch>` | Вибирає цільову архітектуру: `amd64` (за замовчуванням), `i386`, `arm64` або `riscv64`. |
-| `--clang` | Збирає за допомогою Clang/LLVM із RosBE. Це значення за замовчуванням. |
-| `--gcc` | Збирає за допомогою GCC із RosBE замість Clang. RosBE для macOS не включає GCC. |
-| `-r`, `--release` | Створює оптимізовану збірку Release. Без цього параметра створюється збірка Debug, яку легше налагоджувати. |
-| `menuconfig` | Відкриває меню для попереднього вибору додаткових компонентів. Ваш вибір зберігається у вихідній папці. |
-| `makefiles` | Використовує `make` замість Ninja. |
-| `--no-feeds-update` | Пропускає завантаження зовнішніх вихідних кодів, перелічених у `feeds.conf`, наприклад, під час роботи офлайн. |
-| `-D<ім'я>=<значення>` | Передає налаштування безпосередньо до CMake. |
-
-Наприклад:
-
-```sh
-./configure.sh -a arm64              # Збірка ARM64 Debug з Clang
-./configure.sh -a i386 --gcc         # 32-бітна збірка x86 з GCC
-./configure.sh -a amd64 --release    # оптимізована збірка AMD64
-```
-
-Для персоналізованого налаштування додайте `menuconfig`:
-
-```sh
-./configure.sh menuconfig
-```
-
-Ця команда відкриває меню (схоже на меню конфігурації ядра Linux), де ви можете вибрати цільову платформу, компілятор і тип збірки, а також увімкнути чи вимкнути різні компоненти: генерацію коду й оптимізацію, графічну модель драйверів та Mesa, WoW64 та FEX, налагодження ядра, тестові прогони тощо. Натисніть `?` на будь-якому пункті для довідки, `S` для збереження та `Q` для виходу. Ваш вибір зберігається у вихідній папці та використовується кожного разу під час повторної конфігурації.
-
-### 4. Збирання
-
-Перейдіть до вихідної папки та запустіть Ninja з потрібною ціллю:
-
-```sh
-cd output-Clang-amd64-debug
-ninja liberntimg
-```
-
-| Команда | Створює | Призначення |
-| --- | --- | --- |
-| `ninja bootcd` | `bootcd.iso` | Встановлення LiberNT з образу CD у віртуальній машині або на комп'ютері. |
-| `ninja liberntimg` | `LiberNT.img` | Завантаження диска з уже встановленою LiberNT. Запустіть його у віртуальній машині (наприклад, QEMU) або запишіть на USB-накопичувач чи карту SD. Завантажується через UEFI або BIOS. |
-| `ninja liberntvhd` | `LiberNT.vhd`, `LiberNT.vhdx` | Використання того самого диска у віртуальних машинах: VHD у VirtualBox та Hyper-V Generation 1, VHDX у Hyper-V Generation 2, який не підтримує диски VHD. |
-
-Кожна ціль спочатку збирає все необхідне, і файли записуються у вихідну папку.
+Використовуйте [команду QEMU з основного README](../../README.md#step-2-boot-it), прошивку ARM32 і файл змінних `QEMU_VARS.fd`, доступний для запису.
 
 ---
 
 ## Хост-системи для збирання
 
-| Хост | Компілятори | Примітки |
-| --- | --- | --- |
-| **Linux** x86_64 / aarch64 | Clang та GCC | Повний інструментарій RosBE |
-| **macOS** Intel / Apple Silicon | Clang | RosBE не має збірки GCC для macOS |
-| **Windows** | Clang та GCC | Через WSL2, дотримуючись кроків для Linux |
-
-На будь-якій системі встановіть Git, CMake, Ninja, Flex та Bison за допомогою вашого пакетного менеджера. RosBE надає лише крос-компілятори. Попередньо зібрані інструментарії знаходяться в [LiberNT/libernt-build-toolchain](https://github.com/LiberNT/libernt-build-toolchain).
+Перехресне збирання ARMv7 перевірено на Linux із RosBE Clang/LLVM. Цільова архітектура не залежить від архітектури хоста.
 
 ---
 
@@ -267,9 +149,9 @@ LiberNT/
 
 ## Участь у розробці
 
-Повідомляйте про помилки та пропонуйте нові можливості в [Issues](https://github.com/LiberNT/LiberNT/issues); посібники та нотатки можна знайти у [Wiki](https://github.com/LiberNT/LiberNT/wiki).
+Повідомляйте про помилки та пропонуйте нові можливості в [Issues](https://github.com/kernel86-64/LiberNT-ARMv7/issues); посібники та нотатки можна знайти у [Wiki](https://github.com/LiberNT/LiberNT/wiki).
 
-Див. [CONTRIBUTING.md](CONTRIBUTING.md) та [PULL_REQUEST_MANAGEMENT.md](PULL_REQUEST_MANAGEMENT.md). Якщо ви плануєте значні зміни, спершу запитайте про це в [Issues](https://github.com/LiberNT/LiberNT/issues) або в [Discord](https://discord.gg/BpcKg7FZ2).
+Див. [CONTRIBUTING.md](CONTRIBUTING.md) та [PULL_REQUEST_MANAGEMENT.md](PULL_REQUEST_MANAGEMENT.md). Якщо ви плануєте значні зміни, спершу запитайте про це в [Issues](https://github.com/kernel86-64/LiberNT-ARMv7/issues) або в [Discord](https://discord.gg/BpcKg7FZ2).
 
 > [!WARNING]
 > **Юридичне застереження:** Якщо ви бачили пропрієтарний вихідний код Microsoft Windows (включно з, але не обмежуючись витоками вихідного коду Windows NT 3.5, NT 4, 2000 та Windows Research Kernel), ваш внесок не буде прийнято через потенційне порушення авторських прав.
@@ -310,6 +192,5 @@ LiberNT створюється **авторами LiberNT**. Проєкт зап
 
 - [Організація LiberNT на GitHub](https://github.com/LiberNT)
 - [Вебсайт](https://libernt.com)
-- [Завантажити останню збірку](https://github.com/LiberNT/LiberNT/releases)
 - [Wiki](https://github.com/LiberNT/LiberNT/wiki)
 - Спілкування в [Discord](https://discord.gg/BpcKg7FZ2) або [Matrix](https://matrix.to/#/#libernt:matrix.org)

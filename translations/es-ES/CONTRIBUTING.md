@@ -21,7 +21,7 @@ LiberNT se construye en sala limpia: a partir de las cabeceras del Windows SDK y
 
 ### Informar de errores
 
-Informa de los errores en [Issues](https://github.com/LiberNT/LiberNT/issues). Indica la arquitectura (amd64, i386, arm64 o riscv64), el tipo de compilación, el commit que compilaste y los pasos que llevan al problema. Un registro de depuración del puerto serie ayuda mucho.
+Informa de los errores en [Issues](https://github.com/kernel86-64/LiberNT-ARMv7/issues). Indica la arquitectura (`ARMv7-A`, `ARCH=arm`, `SARCH=virt`), el tipo de compilación, el commit que compilaste y los pasos que llevan al problema. Un registro de depuración del puerto serie ayuda mucho.
 
 ### Corregir errores
 
@@ -37,7 +37,7 @@ Ejecuta LiberNT en una máquina virtual o en hardware real e informa de lo que f
 
 ### Implementar cosas nuevas
 
-Windows 11 es la referencia de compatibilidad. Antes de empezar un trabajo grande, pregunta en [Issues](https://github.com/LiberNT/LiberNT/issues) o en [Discord](https://discord.gg/BpcKg7FZ2) si alguien ya está trabajando en ello.
+Windows 11 es la referencia de compatibilidad. Antes de empezar un trabajo grande, pregunta en [Issues](https://github.com/kernel86-64/LiberNT-ARMv7/issues) o en [Discord](https://discord.gg/BpcKg7FZ2) si alguien ya está trabajando en ello.
 
 ### Escribir documentación
 
@@ -57,7 +57,7 @@ Envía tu trabajo como una [pull request] contra la rama `main-nt10`. Las pull r
 
 Antes de abrirla:
 
-- Compila amd64, i386 y arm64, no solo la arquitectura en la que trabajas.
+- Compila `ARCH=arm`, `SARCH=virt` según la [guía ARMv7](../../README.md#building-libernt-yourself) y prueba en QEMU. Compila también los destinos compartidos afectados de otras arquitecturas cuando sus herramientas estén disponibles.
 - Arranca o ejecuta las pruebas que cubren tu cambio, e indica en la pull request qué has ejecutado.
 - Mantén el código específico de una arquitectura en la capa de arquitectura. Consulta [Neutralidad de arquitectura](../../AGENTS.md#architecture-neutrality).
 
@@ -99,7 +99,7 @@ Consulta [CREDITS.md](../../CREDITS.md) para conocer a las personas que hay detr
 
 ## ¿Por dónde empezar?
 
-- Mira las [Issues](https://github.com/LiberNT/LiberNT/issues) abiertas.
+- Mira las [Issues](https://github.com/kernel86-64/LiberNT-ARMv7/issues) abiertas.
 - Busca una prueba que falle, compárala con Windows 11 y haz que pase.
 - Lee la [Wiki](https://github.com/LiberNT/LiberNT/wiki) para encontrar guías y notas de diseño.
 - Pide ayuda en [Discord](https://discord.gg/BpcKg7FZ2) o en [Matrix](https://matrix.to/#/#libernt:matrix.org).

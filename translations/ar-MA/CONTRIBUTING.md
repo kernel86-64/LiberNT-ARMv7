@@ -23,7 +23,7 @@
 
 ### الإبلاغ عن الأخطاء
 
-أبلغ عن الأخطاء في [Issues](https://github.com/LiberNT/LiberNT/issues). اذكر المعمارية (amd64 أو i386 أو arm64 أو riscv64)، ونوع البناء، والإيداع الذي بنيته، والخطوات التي تؤدي إلى المشكلة. سجل التنقيح من المنفذ التسلسلي يساعد كثيرًا.
+أبلغ عن الأخطاء في [Issues](https://github.com/kernel86-64/LiberNT-ARMv7/issues). اذكر المعمارية (`ARMv7-A`, `ARCH=arm`, `SARCH=virt`)، ونوع البناء، والإيداع الذي بنيته، والخطوات التي تؤدي إلى المشكلة. سجل التنقيح من المنفذ التسلسلي يساعد كثيرًا.
 
 ### إصلاح الأخطاء
 
@@ -39,7 +39,7 @@
 
 ### تنفيذ أشياء جديدة
 
-Windows 11 هو مرجع التوافق. قبل البدء في عمل كبير، اسأل في [Issues](https://github.com/LiberNT/LiberNT/issues) أو على [Discord](https://discord.gg/BpcKg7FZ2) إن كان أحد يعمل عليه بالفعل.
+Windows 11 هو مرجع التوافق. قبل البدء في عمل كبير، اسأل في [Issues](https://github.com/kernel86-64/LiberNT-ARMv7/issues) أو على [Discord](https://discord.gg/BpcKg7FZ2) إن كان أحد يعمل عليه بالفعل.
 
 ### كتابة التوثيق
 
@@ -59,7 +59,7 @@ Windows 11 هو مرجع التوافق. قبل البدء في عمل كبير�
 
 قبل أن تفتحه:
 
-- ابنِ amd64 وi386 وarm64، لا المعمارية التي تعمل عليها فقط.
+- ابنِ `ARCH=arm` و`SARCH=virt` وفق [دليل ARMv7](../../README.md#building-libernt-yourself)، ثم اختبر على QEMU. ابنِ أيضًا الأهداف المتأثرة بالتغييرات المشتركة للمعماريات الأخرى عند توفر أدواتها.
 - أقلع النظام أو شغّل الاختبارات التي تغطي تغييرك، واذكر في طلب السحب ما الذي شغّلته.
 - أبقِ الشيفرة الخاصة بمعمارية معيّنة في طبقة المعمارية. راجع [حياد المعمارية](../../AGENTS.md#architecture-neutrality).
 
@@ -101,7 +101,7 @@ Windows 11 هو مرجع التوافق. قبل البدء في عمل كبير�
 
 ## من أين تبدأ؟
 
-- اطّلع على [Issues](https://github.com/LiberNT/LiberNT/issues) المفتوحة.
+- اطّلع على [Issues](https://github.com/kernel86-64/LiberNT-ARMv7/issues) المفتوحة.
 - ابحث عن اختبار يفشل، وقارنه بـ Windows 11، واجعله ينجح.
 - اقرأ [Wiki](https://github.com/LiberNT/LiberNT/wiki) للاطلاع على الأدلة وملاحظات التصميم.
 - اطلب المساعدة على [Discord](https://discord.gg/BpcKg7FZ2) أو [Matrix](https://matrix.to/#/#libernt:matrix.org).

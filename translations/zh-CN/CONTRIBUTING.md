@@ -25,7 +25,7 @@ LiberNT 以净室方式开发：依据 Windows SDK 和 WDK 头文件、Windows 1
 
 ### 报告缺陷
 
-请在 [Issues](https://github.com/LiberNT/LiberNT/issues) 中报告缺陷，注明架构(amd64、i386、arm64 或 riscv64)、构建类型、所用提交，以及复现步骤。串口调试日志会很有帮助。
+请在 [Issues](https://github.com/kernel86-64/LiberNT-ARMv7/issues) 中报告缺陷，注明架构(`ARMv7-A`, `ARCH=arm`, `SARCH=virt`)、构建类型、所用提交，以及复现步骤。串口调试日志会很有帮助。
 
 ### 修复缺陷
 
@@ -41,7 +41,7 @@ LiberNT 以净室方式开发：依据 Windows SDK 和 WDK 头文件、Windows 1
 
 ### 实现新功能
 
-Windows 11 是兼容性参照。动手做较大的功能之前，先在 [Issues](https://github.com/LiberNT/LiberNT/issues) 或 [Discord](https://discord.gg/BpcKg7FZ2) 问一声，看有没有人在做。
+Windows 11 是兼容性参照。动手做较大的功能之前，先在 [Issues](https://github.com/kernel86-64/LiberNT-ARMv7/issues) 或 [Discord](https://discord.gg/BpcKg7FZ2) 问一声，看有没有人在做。
 
 ### 编写文档
 
@@ -61,7 +61,7 @@ Windows 11 是兼容性参照。动手做较大的功能之前，先在 [Issues]
 
 打开之前：
 
-- amd64、i386 和 arm64 都要构建，不能只构建你改动的架构。
+- 按[ARMv7 构建说明](../../README.md#building-libernt-yourself)构建 `ARCH=arm`、`SARCH=virt`，并在 QEMU 中测试；若工具链可用，也应构建受共享改动影响的其他架构目标。
 - 启动或运行覆盖到你改动的测试，并在 PR 里说明跑了什么。
 - 架构相关代码放在架构层。参见[架构中立](../../AGENTS.md#architecture-neutrality)。
 
@@ -103,7 +103,7 @@ LiberNT 和 ReactOS 背后的人，见 [CREDITS.md](../../CREDITS.md)。
 
 ## 从哪里开始？
 
-- 看看开放的 [Issues](https://github.com/LiberNT/LiberNT/issues)。
+- 看看开放的 [Issues](https://github.com/kernel86-64/LiberNT-ARMv7/issues)。
 - 找一个失败的测试，与 Windows 11 对照，把它修到通过。
 - 读 [Wiki](https://github.com/LiberNT/LiberNT/wiki) 里的指南和设计笔记。
 - 到 [Discord](https://discord.gg/BpcKg7FZ2) 或 [Matrix](https://matrix.to/#/#libernt:matrix.org) 求助。

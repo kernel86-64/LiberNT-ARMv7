@@ -1,29 +1,33 @@
-# Installing LiberNT
+# Running LiberNT on ARMv7
 
 > **English** | [中文](translations/zh-CN/INSTALL.md) | [Français](translations/fr-FR/INSTALL.md) | [Español](translations/es-ES/INSTALL.md) | [日本語](translations/ja-JP/INSTALL.md) | [العربية](translations/ar-MA/INSTALL.md) | [Українська](translations/uk-UA/INSTALL.md)
 
-## Building the images
+## Build the ARM32 image
 
-Set up the build environment and configure a build as described in [Building](README.md#building). Then build the image you need from the output folder, for example `output-Clang-amd64-debug`:
+Use the toolchain and source checkout instructions in [Building LiberNT Yourself](README.md#building-libernt-yourself). From the repository root:
 
-| Command | Creates | Use it to |
-|---|---|---|
-| `ninja bootcd` | `bootcd.iso` | Run LiberNT from a CD image, or start LiberNT Setup from it and install LiberNT on a disk. |
-| `ninja liberntimg` | `LiberNT.img` | Boot a disk with LiberNT already installed. It boots with UEFI or BIOS. |
-| `ninja liberntvhd` | `LiberNT.vhd`, `LiberNT.vhdx` | Use the same preinstalled disk in virtual machines: the VHD in VirtualBox and Hyper-V Generation 1, the VHDX in Hyper-V Generation 2, which does not take VHD disks. |
+```sh
+CCACHE_DISABLE=1 ./configure.sh --clang -a arm \
+    -DSARCH=virt -DKD_DEBUGGER=NONE -DOPTIMIZE=0
+cmake -S . -B output-Clang-arm-debug \
+    '-DFREELDR_PREINSTALL_OPTIONS=/DEBUG /DEBUGPORT=COM1 /BAUDRATE=115200'
+CCACHE_DISABLE=1 ninja -C output-Clang-arm-debug liberntimg -j8
+```
 
-Each target builds everything it needs first, and the files are written to the output folder.
+The output is `output-Clang-arm-debug/LiberNT.img`, containing the standard native ARM32 applications, services, fonts and themes. Reuse this build directory. Stop QEMU before rebuilding the image.
 
-## Installing from the setup CD
+## Boot through UEFI in QEMU
 
-Boot `bootcd.iso` in a virtual machine or on a PC, and follow the instructions of LiberNT Setup. Setup lists the drives the way Windows Setup does, and can create, delete, format, shrink and extend partitions. It installs LiberNT on NTFS and creates the EFI system partition it needs.
+Follow the complete [QEMU command in README](README.md#step-2-boot-it), including creation of `QEMU_VARS.fd`. Use ARM32 EDK II firmware and QEMU virt with one Cortex-A15 CPU and 512 MiB RAM.
 
-## Using the preinstalled disk
+The boot chain is **EDK II UEFI → FreeLoader → LiberNT**. The image has an EFI System Partition and an NTFS system partition containing `C:\Windows`.
 
-`LiberNT.img` needs no setup. Start it in a virtual machine such as QEMU, or write it to a USB drive or an SD card and boot the machine from it. Use `LiberNT.vhd` for virtual machines that take VHD disks, and `LiberNT.vhdx` for Hyper-V Generation 2 virtual machines, with Secure Boot turned off.
+## First boot and logon
 
-The preinstalled disk also carries LiberNT Setup. Run `C:\<architecture>\libernt.exe`, for example `C:\arm64\libernt.exe`, to install LiberNT on another disk from the running system.
+Let mini setup finish. The initial account is **Administrator**, with an empty password and automatic logon enabled. The desktop and profile survive subsequent boots. Use the guest’s normal shutdown before closing QEMU.
 
-## Help
+## Testing and hardware scope
 
-If something goes wrong, report it in [Issues](https://github.com/LiberNT/LiberNT/issues) with the architecture, the build type, the commit you built and the steps that lead to the problem. Guides and notes are in the [Wiki](https://github.com/LiberNT/LiberNT/wiki), and you can ask the team on [Discord](https://discord.gg/BpcKg7FZ2) or [Matrix](https://matrix.to/#/#libernt:matrix.org).
+The current target is QEMU ARMv7. Real hardware bring-up is a later milestone. [ARMV7_PORT.md](media/doc/ARMV7_PORT.md) records the actual boot stages, application checks, headless test commands and platform limitations.
+
+Report issues in [this fork’s issue tracker](https://github.com/kernel86-64/LiberNT-ARMv7/issues), including the commit, `ARCH=arm`, `SARCH=virt`, QEMU CPU and firmware, the build type, serial log and reproduction steps.

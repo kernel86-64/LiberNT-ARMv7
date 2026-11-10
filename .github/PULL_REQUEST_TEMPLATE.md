@@ -22,17 +22,16 @@ _Use a TODO when your pull request is Work in Progress._
 
 _Say what you booted or ran, and on which architecture. Tell us which parts AI tools helped with, if any._
 
-- [ ] Builds on amd64, i386 and arm64
+- [ ] Builds for ARMv7 (`ARCH=arm`, `SARCH=virt`)
 - [ ] Boot or test run:
 
-## LiberNT CI
+## ARMv7 validation
 
-_Tick "Run the LiberNT CI tests" to have the LiberNT CI test the images GitHub Actions builds for this pull request, before its next scheduled build. Tick the architectures to test; with none ticked, it tests the architectures of its scheduled builds. Name categories such as `core:exceptions, kernel` to test only those. The results, compared with main-nt10, are published at https://libernt.com/tests/._
+_Use the ARMv7 build and QEMU commands in README.md. Record the actual boot stage and the tests that passed._
 
-- [ ] Run the LiberNT CI tests
-- [ ] amd64
-- [ ] arm64
-- [ ] riscv64
-- [ ] i386
+- [ ] Booted QEMU virt with Cortex-A15, one CPU and ARM32 EDK II firmware
+- [ ] Included the serial log and the test results
 
-CI categories:
+Build configuration, firmware and QEMU version:
+
+Boot stage reached:
