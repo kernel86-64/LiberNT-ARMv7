@@ -458,3 +458,12 @@ KiClearDpcThreadState(
 #define KiPrcbDpcWatchdogCount(Prcb) ((Prcb)->DpcWatchdogCount)
 #define KiPrcbDpcWatchdogPeriod(Prcb) ((Prcb)->DpcWatchdogPeriodTicks)
 #define KiClockTickSuspended(Prcb) FALSE
+
+FORCEINLINE NTSTATUS KiExpandKernelStackCallout(PEXPAND_STACK_CALLOUT Callout, PVOID Parameter,
+                                                SIZE_T Size, BOOLEAN Wait)
+{
+    UNREFERENCED_PARAMETER(Size);
+    UNREFERENCED_PARAMETER(Wait);
+    Callout(Parameter);
+    return STATUS_SUCCESS;
+}

@@ -43,6 +43,25 @@ MmCreateKernelStack(
     return NT_SUCCESS(Status) ? (PVOID)(ULONG_PTR)Top : NULL;
 }
 
+NTSTATUS MiAllocateKernelCalloutStack(BOOLEAN Wait, PVOID *StackBase, PVOID *StackLimit)
+{
+    ULONG Pages = (ULONG)(MmLargeStackSize >> PAGE_SHIFT), Attempts = 0;
+    ULONG64 Top;
+    NTSTATUS Status;
+
+    *StackBase = *StackLimit = NULL;
+    do
+    {
+        Status = MiCreateKernelStack(&MiSystem, Pages, Pages, &Top);
+    } while (Wait && Status == STATUS_NO_MEMORY && NT_SUCCESS(MiWaitForMemory(Status, &Attempts)));
+    if (NT_SUCCESS(Status))
+    {
+        *StackBase = (PVOID)(ULONG_PTR)Top;
+        *StackLimit = (PVOID)(ULONG_PTR)(Top - (ULONG64)Pages * PAGE_SIZE);
+    }
+    return Status;
+}
+
 VOID
 NTAPI
 MmDeleteKernelStack(

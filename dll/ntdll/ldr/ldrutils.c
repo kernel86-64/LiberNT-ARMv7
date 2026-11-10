@@ -1406,8 +1406,6 @@ LdrpMapDll(IN PWSTR SearchPath OPTIONAL,
     PLDR_DATA_TABLE_ENTRY CandidateEntry, LdrEntry;
     ULONG_PTR CandidateBase, CandidateEnd;
     UNICODE_STRING OverlapDll;
-    BOOLEAN RelocatableDll = TRUE;
-    UNICODE_STRING IllegalDll;
     PVOID RelocData;
     ULONG RelocDataSize = 0;
     SECTION_IMAGE_INFORMATION ImageInformation;
@@ -1832,48 +1830,6 @@ SkipCheck:
                 }
             }
 
-            /* See if this is an Illegal DLL - IE: user32 and kernel32 */
-            RtlInitUnicodeString(&IllegalDll,L"user32.dll");
-            if (RtlEqualUnicodeString(&BaseDllName, &IllegalDll, TRUE))
-            {
-                /* Can't relocate user32 */
-                RelocatableDll = FALSE;
-            }
-            else
-            {
-                RtlInitUnicodeString(&IllegalDll, L"kernel32.dll");
-                if (RtlEqualUnicodeString(&BaseDllName, &IllegalDll, TRUE))
-                {
-                    /* Can't relocate kernel32 */
-                    RelocatableDll = FALSE;
-                }
-            }
-
-            /* Known DLLs are not allowed to be relocated */
-            if (KnownDll && !RelocatableDll)
-            {
-                /* Setup for hard error */
-                HardErrorParameters[0] = (ULONG_PTR)&IllegalDll;
-                HardErrorParameters[1] = (ULONG_PTR)&OverlapDll;
-
-                DPRINT1("Illegal DLL relocation! %wZ overlaps %wZ\n", &OverlapDll, &IllegalDll);
-
-                /* Raise the error */
-                ZwRaiseHardError(STATUS_ILLEGAL_DLL_RELOCATION,
-                                 2,
-                                 3,
-                                 HardErrorParameters,
-                                 OptionOk,
-                                 &Response);
-
-                /* If initializing, increase the error count */
-                if (LdrpInLdrInit) LdrpFatalHardErrorCount++;
-
-                /* Don't do relocation */
-                Status = STATUS_CONFLICTING_ADDRESSES;
-                goto FailRelocate;
-            }
-
             /* Change the protection to prepare for relocation */
             Status = LdrpSetProtection(ViewBase, FALSE);
 
@@ -1909,7 +1865,6 @@ SkipCheck:
                     Status = LdrpSetProtection(ViewBase, TRUE);
                 }
             }
-FailRelocate:
             /* Handle any kind of failure */
             if (!NT_SUCCESS(Status))
             {

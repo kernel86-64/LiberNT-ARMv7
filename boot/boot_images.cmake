@@ -52,6 +52,14 @@ endfunction()
 
 set(FREELDR_BOOTCD_INI "${REACTOS_SOURCE_DIR}/boot/bootdata/bootcd.ini")
 set(FREELDR_PREINSTALL_INI "${REACTOS_SOURCE_DIR}/boot/bootdata/preinstall.ini")
+if(ARCH STREQUAL "arm")
+    set_property(DIRECTORY APPEND PROPERTY CMAKE_CONFIGURE_DEPENDS "${FREELDR_PREINSTALL_INI}")
+    file(READ "${FREELDR_PREINSTALL_INI}" _contents)
+    string(REPLACE "/KERNEL=ntkrnlmp.exe" "/KERNEL=ntoskrnl.exe" _contents "${_contents}")
+    set(FREELDR_PREINSTALL_INI "${CMAKE_CURRENT_BINARY_DIR}/bootdata/preinstall_arm.ini")
+    file(CONFIGURE OUTPUT "${FREELDR_PREINSTALL_INI}" CONTENT "${_contents}" @ONLY)
+endif()
+
 if(FREELDR_HTTP_BOOT)
     # The downloaded image is architecture-specific, so each board profile
     # points at its own copy on the build host.
@@ -503,7 +511,7 @@ set(_preinstall_vhdx_file ${REACTOS_BINARY_DIR}/LiberNT.vhdx)
 # MBR follows the active flag and loads its FAT32 boot sector. The Raspberry Pi
 # 1-3 boot ROM only scans for FAT MBR ids and skips 0xEF, so the Raspberry Pi
 # images mark the same volume as FAT32 LBA instead; UEFI mounts it by content.
-if(RPI_SUPPORT OR ARCH STREQUAL "arm" OR FREELDR_HAS_OFW_BOOT)
+if(RPI_SUPPORT OR (ARCH STREQUAL "arm" AND NOT SARCH STREQUAL "virt") OR FREELDR_HAS_OFW_BOOT)
     set(_preinstall_boot_partition_type 0c)
 else()
     set(_preinstall_boot_partition_type ef)

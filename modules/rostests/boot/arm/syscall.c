@@ -47,10 +47,11 @@ PVOID NTAPI MmCreateKernelStack(BOOLEAN Gui, UCHAR Node)
     return NULL;
 }
 
+BOOLEAN ArmTestDeleteCalloutStack(PVOID Base, BOOLEAN Gui);
+
 VOID NTAPI MmDeleteKernelStack(PVOID Base, BOOLEAN Gui)
 {
-    UNREFERENCED_PARAMETER(Base);
-    UNREFERENCED_PARAMETER(Gui);
+    if (ArmTestDeleteCalloutStack(Base, Gui)) return;
     KeBugCheck(KMODE_EXCEPTION_NOT_HANDLED);
 }
 

@@ -7,6 +7,7 @@
 
 #include <ntifs.h>
 #include <mountdev.h>
+#include <ntosp.h>
 
 static NTSTATUS ArmStorageControl(PDEVICE_OBJECT Device, ULONG Code, PVOID Buffer,
                                   ULONG Length, PIO_STATUS_BLOCK IoStatus)
@@ -87,6 +88,9 @@ static NTSTATUS ArmProcessorIdentity(VOID)
     PKEY_VALUE_PARTIAL_INFORMATION Information = (PKEY_VALUE_PARTIAL_INFORMATION)Buffer;
     NTSTATUS Status;
 
+    if (KeGetCurrentProcessorIndex() != KeGetCurrentProcessorNumberEx(NULL) ||
+        KeGetCurrentProcessorIndex() >= KeQueryActiveProcessorCountEx(ALL_PROCESSOR_GROUPS))
+        return STATUS_DATA_ERROR;
     InitializeObjectAttributes(&Attributes, &Name, OBJ_CASE_INSENSITIVE | OBJ_KERNEL_HANDLE, NULL, NULL);
     Status = ZwOpenKey(&Key, KEY_QUERY_VALUE, &Attributes);
     if (!NT_SUCCESS(Status)) return Status;
@@ -125,8 +129,40 @@ static NTSTATUS ArmFastMutexExports(VOID)
 static NTSTATUS ArmPlatformExports(VOID)
 {
     UCHAR Buffer[130];
-    ULONG Index;
+    ULONG Index, Port = 0, Values[3] = {0x11, 0x22, 0x33}, Output[3] = {0};
+    HAL_INTERRUPT_TARGET_INFORMATION Target = {0};
+    HAL_MESSAGE_ROUTING_INFO Routing = {0};
+    MEMORY_CACHING_TYPE Cache = MmCached;
+    PHYSICAL_ADDRESS Address = {{0}};
 
+    WRITE_PORT_ULONG(&Port, 0x12345678);
+    if (READ_PORT_ULONG(&Port) != 0x12345678) return STATUS_DATA_ERROR;
+    WRITE_PORT_USHORT((PUSHORT)&Port, 0xabcd);
+    if (READ_PORT_USHORT((PUSHORT)&Port) != 0xabcd || Port != 0x1234abcd)
+        return STATUS_DATA_ERROR;
+    READ_PORT_BUFFER_ULONG(&Port, Output, ARRAYSIZE(Output));
+    for (Index = 0; Index < ARRAYSIZE(Output); ++Index)
+        if (Output[Index] != Port) return STATUS_DATA_ERROR;
+    WRITE_PORT_BUFFER_ULONG(&Port, Values, ARRAYSIZE(Values));
+    if (Port != Values[ARRAYSIZE(Values) - 1]) return STATUS_DATA_ERROR;
+    WRITE_PORT_BUFFER_ULONG(&Port, NULL, 0);
+    if (Port != Values[ARRAYSIZE(Values) - 1]) return STATUS_DATA_ERROR;
+    if (HalGetInterruptTargetInformation(&Target) != STATUS_INVALID_PARAMETER)
+        return STATUS_DATA_ERROR;
+    Target.Version = HAL_INTERRUPT_TARGET_INFORMATION_VERSION;
+    if (HalGetInterruptTargetInformation(&Target) != STATUS_SUCCESS ||
+        Target.TargetProcessors != 1 || Target.ProcessorNumber || Target.DestinationId)
+        return STATUS_DATA_ERROR;
+    Target.TargetProcessors = 2;
+    if (HalGetInterruptTargetInformation(&Target) != STATUS_INVALID_PARAMETER)
+        return STATUS_DATA_ERROR;
+    Routing.Version = HAL_MESSAGE_ROUTING_INFO_VERSION;
+    if (HalGetMessageRoutingInfo(&Routing) != STATUS_NOT_SUPPORTED) return STATUS_DATA_ERROR;
+    if (HalGetMemoryCachingRequirements(Address, PAGE_SIZE, &Cache) != STATUS_NOT_SUPPORTED ||
+        Cache != MmNonCached) return STATUS_DATA_ERROR;
+    if (HalGetMemoryCachingRequirements(Address, PAGE_SIZE, NULL) != STATUS_INVALID_PARAMETER)
+        return STATUS_DATA_ERROR;
+    if (HalMakeBeep(0) || HalMakeBeep(440)) return STATUS_DATA_ERROR;
     for (Index = 0; Index < sizeof(Buffer); ++Index) Buffer[Index] = (UCHAR)Index;
     if (HalSetBusDataByOffset(MaximumBusDataType, 0, 0, Buffer, 1, sizeof(Buffer)) != 0)
         return STATUS_DATA_ERROR;
@@ -135,6 +171,31 @@ static NTSTATUS ArmPlatformExports(VOID)
     for (Index = 0; Index < sizeof(Buffer); ++Index)
         if (Buffer[Index] != (UCHAR)Index) return STATUS_DATA_ERROR;
     DbgPrint("ARM platform export tests: PASS (unsupported bus, unaligned cache range)\n");
+    return STATUS_SUCCESS;
+}
+
+static NTSTATUS ArmBitmapExports(VOID)
+{
+    static const ULONG Positions[] = {0, 31, 32, 63, 64, 127, 128, 255};
+    RTL_BITMAP_EX Bitmap;
+    ULONG64 Storage[4];
+    ULONG Index;
+
+    RtlInitializeBitMapEx(&Bitmap, Storage, 256);
+    if (Bitmap.SizeOfBitMap != 256 || Bitmap.Buffer != Storage) return STATUS_DATA_ERROR;
+    RtlClearAllBitsEx(&Bitmap);
+    for (Index = 0; Index < ARRAYSIZE(Storage); ++Index)
+        if (Storage[Index]) return STATUS_DATA_ERROR;
+    for (Index = 0; Index < ARRAYSIZE(Positions); ++Index)
+        RtlSetBitEx(&Bitmap, Positions[Index]);
+    for (Index = 0; Index < ARRAYSIZE(Positions); ++Index)
+        if (!RtlTestBitEx(&Bitmap, Positions[Index])) return STATUS_DATA_ERROR;
+    if (RtlTestBitEx(&Bitmap, 1) || RtlTestBitEx(&Bitmap, 254)) return STATUS_DATA_ERROR;
+    for (Index = 0; Index < ARRAYSIZE(Positions); ++Index)
+        RtlClearBitEx(&Bitmap, Positions[Index]);
+    for (Index = 0; Index < ARRAYSIZE(Storage); ++Index)
+        if (Storage[Index]) return STATUS_DATA_ERROR;
+    DbgPrint("ARM extended bitmap exports: PASS (32/64-bit boundaries, final bit, clear)\n");
     return STATUS_SUCCESS;
 }
 
@@ -190,6 +251,7 @@ static VOID NTAPI ArmStorageReinitialize(PDRIVER_OBJECT Driver, PVOID Context, U
     if (NT_SUCCESS(Status)) Status = ArmFastMutexExports();
     if (NT_SUCCESS(Status)) Status = ArmPlatformExports();
     if (NT_SUCCESS(Status)) Status = ArmIoCacheExports();
+    if (NT_SUCCESS(Status)) Status = ArmBitmapExports();
     if (!NT_SUCCESS(Status))
     {
         DbgPrint("ARM storage tests: FAIL identity status=%08lx\n", Status);

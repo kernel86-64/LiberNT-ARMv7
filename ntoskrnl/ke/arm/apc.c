@@ -9,6 +9,21 @@
 #include <ntoskrnl/include/ntoskrnl.h>
 
 VOID
+KiArmDeliverUserApc(PKTRAP_FRAME TrapFrame, PKEXCEPTION_FRAME ExceptionFrame)
+{
+    KIRQL OldIrql;
+
+    if (KiGetPreviousMode(TrapFrame) != UserMode ||
+        !KeGetCurrentThread()->ApcState.UserApcPending)
+        return;
+    OldIrql = KfRaiseIrql(APC_LEVEL);
+    _enable();
+    KiDeliverApc(UserMode, ExceptionFrame, TrapFrame);
+    _disable();
+    KfLowerIrql(OldIrql);
+}
+
+VOID
 NTAPI
 KiInitializeUserApc(IN PKEXCEPTION_FRAME ExceptionFrame,
                     IN PKTRAP_FRAME TrapFrame,

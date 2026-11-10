@@ -300,6 +300,9 @@ if(ARCH STREQUAL "arm" AND CMAKE_C_COMPILER_ID STREQUAL "Clang")
         ${REACTOS_SOURCE_DIR}/modules/rostests/boot/arm/debugsvc.c
         ${REACTOS_SOURCE_DIR}/modules/rostests/boot/arm/syscall.c
         ${REACTOS_SOURCE_DIR}/modules/rostests/boot/arm/callback.c
+        ${REACTOS_SOURCE_DIR}/modules/rostests/boot/arm/interrupt.c
+        ${REACTOS_SOURCE_DIR}/modules/rostests/boot/arm/input.c
+        ${REACTOS_SOURCE_DIR}/modules/rostests/boot/arm/memory.c
         ${REACTOS_SOURCE_DIR}/modules/rostests/boot/arm/syscall_impl.c
         ${REACTOS_SOURCE_DIR}/modules/rostests/boot/arm/syscall.S
         ${REACTOS_SOURCE_DIR}/ntoskrnl/ke/arm/control.c
@@ -316,6 +319,7 @@ if(ARCH STREQUAL "arm" AND CMAKE_C_COMPILER_ID STREQUAL "Clang")
         ${REACTOS_SOURCE_DIR}/modules/rostests/boot/arm/kernel.c
         ${REACTOS_SOURCE_DIR}/modules/rostests/boot/arm/traps.c
         ${REACTOS_SOURCE_DIR}/modules/rostests/boot/arm/switch.c
+        ${REACTOS_SOURCE_DIR}/ntoskrnl/ke/stackcallout.c
         ${REACTOS_SOURCE_DIR}/ntoskrnl/ke/arm/ctxframe.c
         ${REACTOS_SOURCE_DIR}/ntoskrnl/ke/arm/kstack.c
         ${REACTOS_SOURCE_DIR}/ntoskrnl/ke/arm/process.c
@@ -331,6 +335,10 @@ if(ARCH STREQUAL "arm" AND CMAKE_C_COMPILER_ID STREQUAL "Clang")
         arch/uefi/arm/entry.S)
     set_source_files_properties(
         ${REACTOS_SOURCE_DIR}/modules/rostests/boot/arm/syscall.c
+        ${REACTOS_SOURCE_DIR}/modules/rostests/boot/arm/interrupt.c
+        ${REACTOS_SOURCE_DIR}/modules/rostests/boot/arm/input.c
+        ${REACTOS_SOURCE_DIR}/modules/rostests/boot/arm/memory.c
+        ${REACTOS_SOURCE_DIR}/ntoskrnl/ke/stackcallout.c
         ${REACTOS_SOURCE_DIR}/modules/rostests/boot/arm/callback.c
         ${REACTOS_SOURCE_DIR}/modules/rostests/boot/arm/syscall_impl.c
         ${REACTOS_SOURCE_DIR}/modules/rostests/boot/arm/debugsvc.c
@@ -375,6 +383,17 @@ if(ARCH STREQUAL "arm" AND SARCH STREQUAL "virt")
     add_library(arm_storage_test MODULE ${REACTOS_SOURCE_DIR}/modules/rostests/boot/arm/storage_test.c)
     set_source_files_properties(${REACTOS_SOURCE_DIR}/modules/rostests/boot/arm/storage_test.c
         PROPERTIES COMPILE_OPTIONS "-U_BLDR_;-U_NTHAL_")
+    target_include_directories(arm_storage_test PRIVATE
+        ${REACTOS_SOURCE_DIR}/drivers/network/netadaptercx/inc)
     set_module_type(arm_storage_test kernelmodedriver)
     add_importlibs(arm_storage_test ntoskrnl hal)
+endif()
+
+if(ARCH STREQUAL "arm" AND SARCH STREQUAL "virt")
+    add_executable(arm_account_setup ${REACTOS_SOURCE_DIR}/modules/rostests/boot/arm/setup.c)
+    set_source_files_properties(${REACTOS_SOURCE_DIR}/modules/rostests/boot/arm/setup.c
+        PROPERTIES COMPILE_OPTIONS "-U_BLDR_;-U_NTHAL_")
+    set_module_type(arm_account_setup win32gui UNICODE)
+    add_importlibs(arm_account_setup netapi32 advapi32 user32 uxtheme winspool msvcrt kernel32 ntdll)
+    add_cd_file(TARGET arm_account_setup DESTINATION reactos/system32 FOR preinstall)
 endif()

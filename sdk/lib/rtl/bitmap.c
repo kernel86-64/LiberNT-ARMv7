@@ -29,10 +29,10 @@ typedef ULONG64 BITMAP_BUFFER, *PBITMAP_BUFFER;
 #define PRTL_BITMAP_RUN PRTL_BITMAP_RUN64
 #undef BitScanForward
 #define BitScanForward(Index, Mask) \
-    do { unsigned long tmp; BitScanForward64(&tmp, Mask); *Index = tmp; } while (0)
+    do { *(Index) = (ULONG)RtlFindLeastSignificantBit(Mask); } while (0)
 #undef BitScanReverse
 #define BitScanReverse(Index, Mask) \
-    do { unsigned long tmp; BitScanReverse64(&tmp, Mask); *Index = tmp; } while (0)
+    do { *(Index) = (ULONG)RtlFindMostSignificantBit(Mask); } while (0)
 #define RtlFillMemoryUlong RtlFillMemoryUlonglong
 
 #define RtlInitializeBitMap RtlInitializeBitMap64

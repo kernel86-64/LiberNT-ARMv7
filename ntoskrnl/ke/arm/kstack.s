@@ -67,4 +67,30 @@
     .seh_endepilogue
     NESTED_END
 
+    NESTED_ENTRY KiArmCallOnKernelStack
+    push.w {r4-r6, r11, lr}
+    .seh_save_regs_w {r4-r6, r11, lr}
+    sub sp, sp, #4
+    .seh_stackalloc 4
+    PROLOG_END
+    mov r4, sp
+    mov r5, r0
+    mov r0, r1
+    mov sp, r2
+    mov.w r11, #0
+    dsb sy
+    msr cpsr_c, r3
+    blx r5
+    cpsid if
+    mov sp, r4
+    .seh_startepilogue
+    add sp, sp, #4
+    .seh_stackalloc 4
+    pop.w {r4-r6, r11, lr}
+    .seh_save_regs_w {r4-r6, r11, lr}
+    bx lr
+    .seh_nop
+    .seh_endepilogue
+    NESTED_END
+
     END

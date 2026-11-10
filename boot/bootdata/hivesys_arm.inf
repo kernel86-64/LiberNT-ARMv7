@@ -1,0 +1,16 @@
+; PROJECT:     LiberNT ARM32 boot hive
+; LICENSE:     GPL-3.0-or-later (https://spdx.org/licenses/GPL-3.0-or-later)
+; PURPOSE:     Register the native ARM32 print environment
+; COPYRIGHT:   Copyright 2026 LiberNT contributors
+
+[AddReg]
+
+HKLM,"SYSTEM\CurrentControlSet\Control\Print\Environments\Windows ARM","Directory",,"ARM"
+HKLM,"SYSTEM\CurrentControlSet\Control\Print\Environments\Windows ARM\Print Processors",,0x00000010
+HKLM,"SYSTEM\CurrentControlSet\Control\Print\Environments\Windows ARM\Print Processors\winprint","Driver",,"winprint.dll"
+HKLM,"SYSTEM\CurrentControlSet\Control\Print\Environments\Windows ARM\Drivers\Version-3","Directory",,"3"
+HKLM,"SYSTEM\CurrentControlSet\Control\Print\Environments\Windows ARM\Drivers\Version-3","MajorVersion",0x00010001,3
+HKLM,"SYSTEM\CurrentControlSet\Control\Print\Environments\Windows ARM\Drivers\Version-3","MinorVersion",0x00010001,0
+HKLM,"SYSTEM\CurrentControlSet\Control\Print\Environments\Windows ARM\Drivers\Version-4","Directory",,"4"
+HKLM,"SYSTEM\CurrentControlSet\Control\Print\Environments\Windows ARM\Drivers\Version-4","MajorVersion",0x00010001,4
+HKLM,"SYSTEM\CurrentControlSet\Control\Print\Environments\Windows ARM\Drivers\Version-4","MinorVersion",0x00010001,0

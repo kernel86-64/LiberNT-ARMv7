@@ -1007,6 +1007,8 @@ PVOID
 NTAPI
 MmCreateKernelStack(BOOLEAN GuiStack, UCHAR Node);
 
+NTSTATUS MiAllocateKernelCalloutStack(BOOLEAN Wait, PVOID *StackBase, PVOID *StackLimit);
+
 VOID
 NTAPI
 MmDeleteKernelStack(PVOID Stack,

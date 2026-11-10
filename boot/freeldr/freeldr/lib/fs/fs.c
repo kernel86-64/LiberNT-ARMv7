@@ -64,8 +64,8 @@ PFS_MOUNT FileSystems[] =
     FatMount,
     ExFatMount,
     BtrFsMount,
-#ifndef _M_ARM
     NtfsMount,
+#ifndef _M_ARM
     ExtMount,
 #endif
 #if defined(_M_IX86) || defined(_M_AMD64)
@@ -591,10 +591,10 @@ FsGetVolumeSize(
     if (!_wcsicmp(ServiceName, L"btrfs"))
         pFsGetVolumeSize = BtrFsGetVolumeSize;
     else
-#ifndef _M_ARM
     if (!_wcsicmp(ServiceName, L"ntfs"))
         pFsGetVolumeSize = NtfsGetVolumeSize;
     else
+#ifndef _M_ARM
     if (!_wcsicmp(ServiceName, L"ext2fs"))
         pFsGetVolumeSize = ExtGetVolumeSize;
     else

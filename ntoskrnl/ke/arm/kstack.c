@@ -79,3 +79,47 @@ PVOID KiArmSwitchKernelStack(PVOID StackBase, PVOID StackLimit, PVOID StackPoint
     KeGetCurrentPrcb()->SpBase = Thread->InitialStack;
     return (PVOID)OldBase;
 }
+
+NTSTATUS KiExpandKernelStackCallout(PEXPAND_STACK_CALLOUT Callout, PVOID Parameter,
+                                     SIZE_T Size, BOOLEAN Wait)
+{
+    PKTHREAD Thread = KeGetCurrentThread();
+    PVOID Stack, StackLimit, OldBase, OldInitial, OldKernelStack;
+    ULONG_PTR OldLimit, StackPointer;
+    ULONG Flags;
+    BOOLEAN OldLarge, OldCallout;
+    NTSTATUS Status;
+
+    __asm__ __volatile__("mov %0, sp" : "=r"(StackPointer));
+    if (StackPointer - Thread->StackLimit >= Size + PAGE_SIZE)
+    {
+        Callout(Parameter);
+        return STATUS_SUCCESS;
+    }
+    Status = MiAllocateKernelCalloutStack(Wait, &Stack, &StackLimit);
+    if (!NT_SUCCESS(Status)) return STATUS_NO_MEMORY;
+    __asm__ __volatile__("mrs %0, cpsr\n\tcpsid if" : "=r"(Flags) :: "memory");
+    OldBase = Thread->StackBase;
+    OldInitial = Thread->InitialStack;
+    OldKernelStack = Thread->KernelStack;
+    OldLimit = Thread->StackLimit;
+    OldLarge = Thread->LargeStack;
+    OldCallout = Thread->CalloutActive;
+    Thread->StackBase = Thread->InitialStack = Stack;
+    Thread->StackLimit = (ULONG_PTR)StackLimit;
+    Thread->KernelStack = Stack;
+    Thread->LargeStack = TRUE;
+    Thread->CalloutActive = TRUE;
+    KeGetCurrentPrcb()->SpBase = Stack;
+    KiArmCallOnKernelStack(Callout, Parameter, Stack, Flags);
+    Thread->StackBase = OldBase;
+    Thread->InitialStack = OldInitial;
+    Thread->KernelStack = OldKernelStack;
+    Thread->StackLimit = OldLimit;
+    Thread->LargeStack = OldLarge;
+    Thread->CalloutActive = OldCallout;
+    KeGetCurrentPrcb()->SpBase = OldInitial;
+    __asm__ __volatile__("dsb sy\n\tmsr cpsr_c, %0\n\tisb" :: "r"(Flags) : "memory");
+    MmDeleteKernelStack(Stack, TRUE);
+    return STATUS_SUCCESS;
+}

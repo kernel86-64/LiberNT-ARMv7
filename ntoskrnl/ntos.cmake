@@ -188,6 +188,7 @@ list(APPEND SOURCE
     ${REACTOS_SOURCE_DIR}/ntoskrnl/ke/ipi.c
     ${REACTOS_SOURCE_DIR}/ntoskrnl/ke/passint.c
     ${REACTOS_SOURCE_DIR}/ntoskrnl/ke/krnlinit.c
+    ${REACTOS_SOURCE_DIR}/ntoskrnl/ke/stackcallout.c
     ${REACTOS_SOURCE_DIR}/ntoskrnl/ke/mutex.c
     ${REACTOS_SOURCE_DIR}/ntoskrnl/ke/procgrp.c
     ${REACTOS_SOURCE_DIR}/ntoskrnl/ke/processor.c

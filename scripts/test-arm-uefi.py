@@ -8,6 +8,7 @@ COPYRIGHT:   Copyright 2026 LiberNT contributors
 import argparse
 import fcntl
 import json
+import importlib.util
 import os
 from pathlib import Path
 import re
@@ -24,7 +25,7 @@ def run(*args, **kwargs):
     subprocess.run([str(arg) for arg in args], check=True, **kwargs)
 
 
-def session_modules(build, env, no_build, startup=False):
+def session_modules(build, env, no_build, startup=False, login=False):
     targets = subprocess.check_output(['ninja', '-C', str(build), '-t', 'targets', 'all'], text=True)
     modules = {}
     for line in targets.splitlines():
@@ -36,6 +37,10 @@ def session_modules(build, env, no_build, startup=False):
     if startup:
         pending.update(['winlogon.exe', 'services.exe', 'lsass.exe', 'msgina.dll',
                         'kbdus.dll', 'cdd.dll', 'msv1_0.dll'])
+    if login:
+        pending.update(['arm_account_setup.exe', 'userinit.exe', 'explorer.exe',
+                        'browseui.dll', 'actxprxy.dll', 'stobject.dll', 'rpcss.exe',
+                        'windowscodecs.dll', 'mmdevapi.dll', 'windows.storage.dll', 'ntmarta.dll'])
     provided = {'ntdll.dll', 'ntoskrnl.exe', 'hal.dll', 'win32k.sys',
                 'kdcom.dll', 'bootvid.dll', 'lfbbvid.dll'}
     selected = {}
@@ -54,17 +59,59 @@ def session_modules(build, env, no_build, startup=False):
             imports = subprocess.check_output(['llvm-readobj', '--coff-imports', str(build / path)], text=True)
             pending.update(name.lower() for name in re.findall(r'^  Name: (.+)$', imports, re.MULTILINE)
                            if name.lower() not in selected and name.lower() not in provided)
+    companions = {}
+    for name, path in selected.items():
+        resource = Path(name).stem + '_mun.dll'
+        if resource in modules:
+            candidates = modules[resource]
+            if len(candidates) != 1:
+                raise RuntimeError(f'cannot resolve neutral resources {resource}: {candidates}')
+            companions[resource] = candidates[0]
+    if companions and not no_build:
+        run('ninja', '-C', build, *companions.values(), '-j8', env=env)
+    selected.update(companions)
     return [build / selected[name] for name in sorted(selected) if name != 'ntdll.dll']
 
 
-def guest_command(path, command):
+
+def session_registry(build, modules):
+    spec = importlib.util.spec_from_file_location('mkcomreg', ROOT / 'sdk/tools/mkcomreg.py')
+    comreg = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(comreg)
+    available = {path.name.lower(): str(path) for path in modules}
+    original = (ROOT / 'media/inf/syssetup.inf').read_text().splitlines()
+    selected = []
+    runtime = set()
+    for section in ['OleControlDlls', 'OleControlDllsCode', 'EarlyRegisterDlls', 'TypeLibraries']:
+        selected.append('[' + section + ']')
+        for fields in comreg.read_inf_section(original, section):
+            name = fields[0] if section == 'TypeLibraries' else fields[2]
+            if name.lower() not in available:
+                continue
+            selected.append(','.join(fields))
+            if section in ['OleControlDllsCode', 'EarlyRegisterDlls']:
+                runtime.add(name.lower())
+    code = comreg.read_code_data((ROOT / 'boot/bootdata/comreg_code.inf').read_text().splitlines())
+    code = {name: ops for name, ops in code.items() if name in runtime}
+    warnings = []
+    registry = comreg.build(selected, available, {}, code, warnings)
+    output = build / 'arm-kernel-payload/shell-registry.inf'
+    with output.open('w') as stream:
+        comreg.write_inf(registry, stream)
+    return output
+
+
+def guest_command(path, command, arguments=None):
     with socket.socket(socket.AF_UNIX) as connection:
         connection.settimeout(3)
         connection.connect(str(path))
         stream = connection.makefile('rwb')
         json.loads(stream.readline())
         for command in ['qmp_capabilities', command]:
-            stream.write((json.dumps({'execute': command}) + '\n').encode())
+            request = {'execute': command}
+            if command != 'qmp_capabilities' and arguments is not None:
+                request['arguments'] = arguments
+            stream.write((json.dumps(request) + '\n').encode())
             stream.flush()
             while True:
                 response = json.loads(stream.readline())
@@ -72,6 +119,87 @@ def guest_command(path, command):
                     break
                 if 'error' in response:
                     raise RuntimeError(response['error'])
+
+
+
+def input_snapshot(qmp, build):
+    path = build / 'arm-screen.ppm'
+    guest_command(qmp, 'screendump', {'filename': str(path)})
+    magic, dimensions, maximum, pixels = path.read_bytes().split(b'\n', 3)
+    if (magic, dimensions, maximum) != (b'P6', b'800 600', b'255') or len(pixels) != 800 * 600 * 3:
+        raise RuntimeError('unexpected input test framebuffer format')
+    return pixels
+
+
+def input_region(pixels, x, y, width, height):
+    return b''.join(pixels[((y + row) * 800 + x) * 3:((y + row) * 800 + x + width) * 3]
+                    for row in range(height))
+
+
+def exercise_input(qmp, build):
+    before = input_snapshot(qmp, build)
+    guest_command(qmp, 'input-send-event', {'events': [
+        {'type': 'abs', 'data': {'axis': 'x', 'value': 24576}},
+        {'type': 'abs', 'data': {'axis': 'y', 'value': 16384}}]})
+    time.sleep(0.5)
+    pointer = input_snapshot(qmp, build)
+    if input_region(before, 590, 290, 40, 40) == input_region(pointer, 590, 290, 40, 40):
+        raise RuntimeError('VirtIO tablet did not move the guest cursor')
+    for down in [True, False]:
+        guest_command(qmp, 'input-send-event', {'events': [
+            {'type': 'key', 'data': {'down': down, 'key': {'type': 'qcode', 'data': 'spc'}}}]})
+        time.sleep(0.1)
+    deadline = time.monotonic() + 4
+    while True:
+        time.sleep(0.2)
+        keyboard = input_snapshot(qmp, build)
+        if input_region(pointer, 250, 530, 300, 40) != input_region(keyboard, 250, 530, 300, 40):
+            break
+        if time.monotonic() >= deadline:
+            raise RuntimeError('VirtIO keyboard did not dismiss the lock screen')
+    time.sleep(1)
+    before = input_snapshot(qmp, build)
+    guest_command(qmp, 'input-send-event', {'events': [
+        {'type': 'abs', 'data': {'axis': 'x', 'value': 16384}},
+        {'type': 'abs', 'data': {'axis': 'y', 'value': 19933}}]})
+    for down in [True, False]:
+        guest_command(qmp, 'input-send-event', {'events': [
+            {'type': 'btn', 'data': {'down': down, 'button': 'left'}}]})
+        time.sleep(0.1)
+    for down in [True, False]:
+        guest_command(qmp, 'input-send-event', {'events': [
+            {'type': 'key', 'data': {'down': down, 'key': {'type': 'qcode', 'data': 'a'}}}]})
+        time.sleep(0.1)
+    time.sleep(0.5)
+    after = input_snapshot(qmp, build)
+    if input_region(before, 310, 353, 60, 20) == input_region(after, 310, 353, 60, 20):
+        raise RuntimeError('mouse click and keyboard text did not reach the password field')
+
+
+def input_key(qmp, key):
+    for down in [True, False]:
+        guest_command(qmp, 'input-send-event', {'events': [
+            {'type': 'key', 'data': {'down': down, 'key': {'type': 'qcode', 'data': key}}}]})
+    time.sleep(0.1)
+
+
+def exercise_login(qmp, build):
+    input_key(qmp, 'spc')
+    time.sleep(3)
+    guest_command(qmp, 'input-send-event', {'events': [
+        {'type': 'abs', 'data': {'axis': 'x', 'value': 2048}},
+        {'type': 'abs', 'data': {'axis': 'y', 'value': 29327}}]})
+    for down in [True, False]:
+        guest_command(qmp, 'input-send-event', {'events': [
+            {'type': 'btn', 'data': {'down': down, 'button': 'left'}}]})
+        time.sleep(0.1)
+    time.sleep(1)
+    for key in ['a', 'r', 'm', 'v', '7']:
+        input_key(qmp, key)
+    time.sleep(0.3)
+    input_key(qmp, 'ret')
+    time.sleep(1)
+    input_snapshot(qmp, build)
 
 
 def stop_guest(path):
@@ -96,104 +224,144 @@ def clock_snapshot(qmp):
     raise RuntimeError('could not read the ARM shared clock counters')
 
 
-def boot(build, firmware, stage, lock, modern=False, modules=(), observe=False):
-    image = build / 'arm-uefi-tests.img'
+def boot(build, firmware, stage, lock, modern=False, modules=(), observe=False, input_devices=False, login=False, reuse=False, installed=None):
+    image = installed if installed else build / 'arm-uefi-tests.img'
+    reuse = reuse or installed is not None
     variables = build / 'QEMU_VARS.fd'
     log = build / 'arm-boot.log'
     qmp = build / 'arm-qemu.qmp'
-    application = 'arm_uefi_test' if stage == 'abi' else 'uefildr'
-    binary = build / 'boot/freeldr/freeldr' / (application + '.efi')
-    shutil.copyfile(firmware.with_name('edk2-arm-vars.fd'), variables)
-    with image.open('wb') as output:
-        output.truncate(128 * 1024 * 1024)
-    fat_image = image
-    if stage in ['storage', 'user', 'session', 'csr']:
-        mbr = bytearray(512)
-        struct.pack_into('<I', mbr, 440, 0x4C4E5441)
-        struct.pack_into('<BBBBBBBBII', mbr, 446, 0x80, 0xFE, 0xFF, 0xFF,
-                         0x0C, 0xFE, 0xFF, 0xFF, 2048, 128 * 2048 - 2048)
-        mbr[510:512] = b'\x55\xaa'
-        with image.open('r+b') as output:
-            output.write(mbr)
-        run('mkfs.vfat', '-F', '32', '--offset=2048', '-h', '2048', image,
-            stdout=subprocess.DEVNULL)
-        fat_image = str(image) + '@@1048576'
+    if installed:
+        shutil.copyfile(firmware.with_name('edk2-arm-vars.fd'), variables)
+    if reuse:
+        if not image.is_file() or not variables.is_file():
+            raise RuntimeError('the reusable ARM image and firmware variables are missing')
     else:
-        run('mkfs.vfat', '-F', '32', image, stdout=subprocess.DEVNULL)
-    run('mmd', '-i', fat_image, '::/EFI', '::/EFI/BOOT')
-    run('mcopy', '-i', fat_image, binary, '::/EFI/BOOT/BOOTARM.EFI')
-    config = build / 'freeldr.ini'
-    config.write_text(
-        '[FREELOADER]\nTimeOut=0\nDefaultOS=LiberNT\nDebug=COM1\n\n'
-        '[Operating Systems]\nLiberNT="LiberNT ARMv7"\n\n'
-        '[LiberNT]\nBootType=Windows2003\n'
-        f'SystemPath=multi(0)disk(0)rdisk(0)partition({1 if stage in ["storage", "user", "session", "csr"] else 0})\\reactos\n'
-        'Options=/DEBUG /DEBUGPORT=COM1 /BAUDRATE=115200\n')
-    run('mcopy', '-i', fat_image, config, '::/freeldr.ini')
-    if stage in ['kernel', 'clock', 'storage', 'user', 'session', 'csr']:
-        payload = build / 'arm-kernel-payload'
-        payload.mkdir(exist_ok=True)
-        run(build / 'host-tools/bin/mkhive', '-h:SYSTEM,SOFTWARE' if stage == 'csr' else '-h:SYSTEM', f'-d:{payload}',
-            ROOT / 'modules/rostests/boot/arm/system.inf',
-            *([ROOT / 'modules/rostests/boot/arm/storage.inf',
-               ROOT / 'modules/rostests/boot/arm/session.inf'] if stage in ['storage', 'user', 'session', 'csr'] else []),
-            *([ROOT / 'drivers/directx/dxgkrnl/wddm_reg.inf',
-               ROOT / 'drivers/directx/softgpu/softgpu_root_reg.inf',
-               ROOT / 'drivers/filesystems/npfs/npfs_reg.inf',
-               ROOT / 'drivers/crypto/ksecdd/ksecdd_reg.inf',
-               ROOT / 'modules/rostests/boot/arm/graphics.inf',
-               ROOT / 'modules/rostests/boot/arm/startup.inf'] if stage == 'csr' else []),
-            stdout=subprocess.DEVNULL)
-        run('mmd', '-i', fat_image, '::/reactos', '::/reactos/system32',
-            '::/reactos/system32/config')
-        for source, name in [
-            (build / 'ntoskrnl/ntoskrnl.exe', 'ntoskrnl.exe'),
-            (build / 'hal/halarm/hal.dll', 'hal.dll'),
-            (build / 'drivers/base/kdrosdbg/kdcom.dll', 'kdcom.dll'),
-            (build / 'drivers/base/bootvid/bootvid.dll', 'bootvid.dll'),
-            (build / 'drivers/base/bootvid/lfbbvid.dll', 'lfbbvid.dll'),
-            (build / 'media/nls/c_1252.nls', 'c_1252.nls'),
-            (build / 'media/nls/c_437.nls', 'c_437.nls'),
-            (build / 'media/nls/c_20127.nls', 'c_20127.nls'),
-            (ROOT / 'media/nls/l_intl.nls', 'l_intl.nls'),
-            (ROOT / 'media/nls/locale.nls', 'locale.nls'),
-            (ROOT / 'media/nls/sortdefault.nls', 'sortdefault.nls'),
-        ]:
-            run('mcopy', '-i', fat_image, source, f'::/reactos/system32/{name}')
-        run('mcopy', '-i', fat_image, payload / 'system', '::/reactos/system32/config/system')
-        if stage == 'csr':
-            run('mcopy', '-i', fat_image, payload / 'software', '::/reactos/system32/config/software')
-            run('mmd', '-i', fat_image, '::/reactos/Fonts')
-            for name in ['FreeSans.ttf', 'tahoma.ttf', 'tahomabd.ttf']:
-                run('mcopy', '-i', fat_image, ROOT / 'media/fonts' / name, '::/reactos/Fonts/' + name)
-    if stage in ['storage', 'user', 'session', 'csr']:
-        for source in ['dll/ntdll/ntdll.dll', 'base/system/smss/smss.exe',
-                       'base/system/autochk/autochk.exe', 'subsystems/csr/csrss/csrss.exe',
-                       'win32ss/win32k.sys', 'win32ss/drivers/font/ftfd/ftfd.dll']:
-            run('mcopy', '-i', fat_image, build / source, '::/reactos/system32/' + Path(source).name)
-        for source in modules:
-            run('mcopy', '-i', fat_image, source, '::/reactos/system32/' + source.name)
-        run('mmd', '-i', fat_image, '::/reactos/system32/drivers')
-        for source in ['drivers/storage/virtblk/virtblk.sys',
-                       'drivers/storage/mountmgr/mountmgr.sys',
-                       'drivers/hid/hidparse/hidparse.sys',
-                       'drivers/filesystems/fastfat/fastfat.sys',
-                       'boot/freeldr/freeldr/arm_storage_test.sys']:
-            run('mcopy', '-i', fat_image, build / source,
-                '::/reactos/system32/drivers/' + Path(source).name)
-        if stage == 'csr':
-            for source in ['drivers/directx/dxgmms2/dxgmms2.sys',
-                           'drivers/directx/dxgkrnl/dxgkrnl.sys',
-                           'drivers/directx/softgpu/BasicDisplay.sys',
-                           'drivers/filesystems/npfs/npfs.sys',
-                           'drivers/crypto/ksecdd/ksecdd.sys']:
+        application = 'arm_uefi_test' if stage == 'abi' else 'uefildr'
+        binary = build / 'boot/freeldr/freeldr' / (application + '.efi')
+        shutil.copyfile(firmware.with_name('edk2-arm-vars.fd'), variables)
+        with image.open('wb') as output:
+            output.truncate(128 * 1024 * 1024)
+        fat_image = image
+        if stage in ['storage', 'user', 'session', 'csr']:
+            mbr = bytearray(512)
+            struct.pack_into('<I', mbr, 440, 0x4C4E5441)
+            struct.pack_into('<BBBBBBBBII', mbr, 446, 0x80, 0xFE, 0xFF, 0xFF,
+                             0x0C, 0xFE, 0xFF, 0xFF, 2048, 128 * 2048 - 2048)
+            mbr[510:512] = b'\x55\xaa'
+            with image.open('r+b') as output:
+                output.write(mbr)
+            run('mkfs.vfat', '-F', '32', '--offset=2048', '-h', '2048', image,
+                stdout=subprocess.DEVNULL)
+            fat_image = str(image) + '@@1048576'
+        else:
+            run('mkfs.vfat', '-F', '32', image, stdout=subprocess.DEVNULL)
+        run('mmd', '-i', fat_image, '::/EFI', '::/EFI/BOOT')
+        run('mcopy', '-i', fat_image, binary, '::/EFI/BOOT/BOOTARM.EFI')
+        config = build / 'freeldr.ini'
+        config.write_text(
+            '[FREELOADER]\nTimeOut=0\nDefaultOS=LiberNT\nDebug=COM1\n\n'
+            '[Operating Systems]\nLiberNT="LiberNT ARMv7"\n\n'
+            '[LiberNT]\nBootType=Windows2003\n'
+            f'SystemPath=multi(0)disk(0)rdisk(0)partition({1 if stage in ["storage", "user", "session", "csr"] else 0})\\reactos\n'
+            'Options=/DEBUG /DEBUGPORT=COM1 /BAUDRATE=115200\n')
+        run('mcopy', '-i', fat_image, config, '::/freeldr.ini')
+        if stage in ['kernel', 'clock', 'storage', 'user', 'session', 'csr']:
+            payload = build / 'arm-kernel-payload'
+            payload.mkdir(exist_ok=True)
+            if login:
+                shell_registry = session_registry(build, modules)
+            if input_devices:
+                inf_list = payload / 'input-infs.txt'
+                inf_list.write_text(''.join(str(ROOT / 'media/inf' / name) + '\n'
+                                            for name in ['keyboard.inf', 'msmouse.inf']))
+                run(build / 'host-tools/bin/mkdrvdb', 'arm', payload / 'input-drivers.inf', inf_list)
+            run(build / 'host-tools/bin/mkhive', '-h:SYSTEM,SOFTWARE,SAM,SECURITY,DEFAULT' if login else ('-h:SYSTEM,SOFTWARE' if stage == 'csr' else '-h:SYSTEM'), f'-d:{payload}',
+                ROOT / 'modules/rostests/boot/arm/system.inf',
+                *([ROOT / 'modules/rostests/boot/arm/storage.inf',
+                   ROOT / 'modules/rostests/boot/arm/session.inf'] if stage in ['storage', 'user', 'session', 'csr'] else []),
+                *([ROOT / 'drivers/directx/dxgkrnl/wddm_reg.inf',
+                   ROOT / 'drivers/directx/softgpu/softgpu_root_reg.inf',
+                   ROOT / 'drivers/filesystems/npfs/npfs_reg.inf',
+                   ROOT / 'drivers/crypto/ksecdd/ksecdd_reg.inf',
+                   ROOT / 'modules/rostests/boot/arm/graphics.inf',
+                   ROOT / 'modules/rostests/boot/arm/startup.inf'] if stage == 'csr' else []),
+                *([ROOT / 'drivers/input/kbdclass/kbdclass_reg.inf',
+                   ROOT / 'drivers/input/mouclass/mouclass_reg.inf',
+                   ROOT / 'modules/rostests/boot/arm/input.inf',
+                   payload / 'input-drivers.inf'] if input_devices else []),
+                *([ROOT / 'boot/bootdata/hivecls.inf',
+                   ROOT / 'boot/bootdata/hivedef.inf',
+                   shell_registry,
+                   ROOT / 'modules/rostests/boot/arm/account.inf'] if login else []),
+                stdout=subprocess.DEVNULL)
+            run('mmd', '-i', fat_image, '::/reactos', '::/reactos/system32',
+                '::/reactos/system32/config')
+            for source, name in [
+                (build / 'ntoskrnl/ntoskrnl.exe', 'ntoskrnl.exe'),
+                (build / 'hal/halarm/hal.dll', 'hal.dll'),
+                (build / 'drivers/base/kdrosdbg/kdcom.dll', 'kdcom.dll'),
+                (build / 'drivers/base/bootvid/bootvid.dll', 'bootvid.dll'),
+                (build / 'drivers/base/bootvid/lfbbvid.dll', 'lfbbvid.dll'),
+                (build / 'media/nls/c_1252.nls', 'c_1252.nls'),
+                (build / 'media/nls/c_437.nls', 'c_437.nls'),
+                (build / 'media/nls/c_20127.nls', 'c_20127.nls'),
+                (ROOT / 'media/nls/l_intl.nls', 'l_intl.nls'),
+                (ROOT / 'media/nls/locale.nls', 'locale.nls'),
+                (ROOT / 'media/nls/sortdefault.nls', 'sortdefault.nls'),
+            ]:
+                run('mcopy', '-i', fat_image, source, f'::/reactos/system32/{name}')
+            run('mcopy', '-i', fat_image, payload / 'system', '::/reactos/system32/config/system')
+            if stage == 'csr':
+                run('mcopy', '-i', fat_image, payload / 'software', '::/reactos/system32/config/software')
+                if login:
+                    for name in ['sam', 'security', 'default']:
+                        run('mcopy', '-i', fat_image, payload / name, '::/reactos/system32/config/' + name)
+                    run('mmd', '-i', fat_image, '::/Users', '::/Users/Default', '::/Users/Default/Desktop',
+                    '::/Users/Public', '::/Users/Public/Desktop', '::/ProgramData')
+                    run('mcopy', '-i', fat_image, payload / 'default', '::/Users/Default/NTUSER.DAT')
+                run('mmd', '-i', fat_image, '::/reactos/Fonts')
+                for name in ['FreeSans.ttf', 'tahoma.ttf', 'tahomabd.ttf']:
+                    run('mcopy', '-i', fat_image, ROOT / 'media/fonts' / name, '::/reactos/Fonts/' + name)
+        if stage in ['storage', 'user', 'session', 'csr']:
+            for source in ['dll/ntdll/ntdll.dll', 'base/system/smss/smss.exe',
+                           'base/system/autochk/autochk.exe', 'subsystems/csr/csrss/csrss.exe',
+                           'win32ss/win32k.sys', 'win32ss/drivers/font/ftfd/ftfd.dll']:
+                run('mcopy', '-i', fat_image, build / source, '::/reactos/system32/' + Path(source).name)
+            run('mmd', '-i', fat_image, '::/reactos/SystemResources')
+            for source in modules:
+                if source.name.endswith('_mun.dll'):
+                    destination = '::/reactos/SystemResources/' + source.name.replace('_mun.dll', '.dll.mun')
+                else:
+                    directory = '::/reactos/' if source.name == 'explorer.exe' else '::/reactos/system32/'
+                    destination = directory + source.name
+                run('mcopy', '-i', fat_image, source, destination)
+            run('mmd', '-i', fat_image, '::/reactos/system32/drivers')
+            for source in ['drivers/storage/virtblk/virtblk.sys',
+                           'drivers/storage/mountmgr/mountmgr.sys',
+                           'drivers/hid/hidparse/hidparse.sys',
+                           'drivers/filesystems/fastfat/fastfat.sys',
+                           'boot/freeldr/freeldr/arm_storage_test.sys']:
                 run('mcopy', '-i', fat_image, build / source,
                     '::/reactos/system32/drivers/' + Path(source).name)
-            run('mcopy', '-i', fat_image, build / 'win32ss/drivers/displays/framebuf/framebuf.dll',
-                '::/reactos/system32/framebuf.dll')
-        data = build / 'arm-kernel-payload/storage-test.bin'
-        data.write_bytes(bytes((index * 37 + 11) & 255 for index in range(4096)))
-        run('mcopy', '-i', fat_image, data, '::/reactos/storage-test.bin')
+            if stage == 'csr':
+                for source in ['drivers/directx/dxgmms2/dxgmms2.sys',
+                               'drivers/directx/dxgkrnl/dxgkrnl.sys',
+                               'drivers/directx/softgpu/BasicDisplay.sys',
+                               'drivers/filesystems/npfs/npfs.sys',
+                               'drivers/crypto/ksecdd/ksecdd.sys']:
+                    run('mcopy', '-i', fat_image, build / source,
+                        '::/reactos/system32/drivers/' + Path(source).name)
+                run('mcopy', '-i', fat_image, build / 'win32ss/drivers/displays/framebuf/framebuf.dll',
+                    '::/reactos/system32/framebuf.dll')
+            data = build / 'arm-kernel-payload/storage-test.bin'
+            data.write_bytes(bytes((index * 37 + 11) & 255 for index in range(4096)))
+            run('mcopy', '-i', fat_image, data, '::/reactos/storage-test.bin')
+        if input_devices:
+            for source in ['drivers/input/virtinput/virtinput.sys', 'drivers/hid/hidclass/hidclass.sys',
+                           'drivers/hid/kbdhid/kbdhid.sys', 'drivers/hid/mouhid/mouhid.sys',
+                           'drivers/input/kbdclass/kbdclass.sys', 'drivers/input/mouclass/mouclass.sys']:
+                run('mcopy', '-i', fat_image, build / source,
+                    '::/reactos/system32/drivers/' + Path(source).name)
     command = [
         'qemu-system-arm', '-machine', 'virt', '-cpu', 'cortex-a15',
         '-m', '512', '-smp', '1', '-display', 'none', '-monitor', 'none',
@@ -206,8 +374,12 @@ def boot(build, firmware, stage, lock, modern=False, modules=(), observe=False):
         '-qmp', f'unix:{qmp},server=on,wait=off']
     if modern:
         command.extend(['-global', 'virtio-mmio.force-legacy=false'])
+    if input_devices:
+        command.extend(['-device', 'virtio-keyboard-device', '-device', 'virtio-tablet-device'])
     keep = False
     started = last_change = time.monotonic()
+    input_verified = False
+    login_attempted = False
     previous_size = 0
     clock = {"interrupt_time": 0, "ticks": 0}
     with log.open('wb') as output:
@@ -224,12 +396,27 @@ def boot(build, firmware, stage, lock, modern=False, modules=(), observe=False):
                 if any(marker in text for marker in [
                         'Exception PC at', 'ASSERT [', 'tests: FAIL', '[ABORT]', '[PREFETCH ABORT]', '[UNDEF]',
                         'Kill csrss.exe', 'Kill wininit.exe', 'Kill winlogon.exe',
-                        'Kill services.exe', 'Kill lsass.exe']):
+                        'Kill services.exe', 'Kill lsass.exe', 'Kill userinit.exe', 'Kill explorer.exe']):
                     stop_guest(qmp)
                     keep = True
                     raise RuntimeError(
                         f'{stage}: guest stopped for debugging (PID {process.pid}); '
                         f'gdb target remote 127.0.0.1:1234; log: {log}')
+                if (login and not login_attempted and now - started >= 18 and
+                        ('WINLOGON: Session initialized' in text if reuse else 'ARM account setup: PASS' in text)):
+                    exercise_login(qmp, build)
+                    login_attempted = True
+                    last_change = time.monotonic()
+                if (input_devices and not installed and not login and not input_verified and now - started >= 20 and
+                        'WINLOGON: Session initialized' in text):
+                    try:
+                        exercise_input(qmp, build)
+                    except Exception:
+                        stop_guest(qmp)
+                        keep = True
+                        raise
+                    input_verified = True
+                    last_change = time.monotonic()
                 if stage == 'storage' and 'ARM storage tests: PASS' in text:
                     stop_guest(qmp)
                     keep = True
@@ -260,7 +447,8 @@ def boot(build, firmware, stage, lock, modern=False, modules=(), observe=False):
                     stop_guest(qmp)
                     keep = True
                     break
-                if (stage == 'clock' or observe) and now - last_change >= 6 and now - started < 30:
+                if ((stage == 'clock' or observe) and 'ARM kernel: KiInitializeSystem' in text and
+                        now - last_change >= 6 and now - started < 30):
                     stop_guest(qmp)
                     keep = True
                     snapshot = clock_snapshot(qmp)
@@ -289,7 +477,7 @@ def boot(build, firmware, stage, lock, modern=False, modules=(), observe=False):
                 passed = all(marker in text for marker in [
                     'ARM kernel: KiInitializeSystem', 'Kernel address space:',
                     'Memory:', 'Boot images: ntoskrnl.exe'])
-                if stage in ['storage', 'user', 'session', 'csr']:
+                if not installed and stage in ['storage', 'user', 'session', 'csr']:
                     passed = passed and all(marker in text for marker in [
                         'boot disk online', 'ARM storage tests: PASS', 'ARM storage identity tests: PASS',
                         'ARM processor identity tests: PASS', 'ARM fast mutex export tests: PASS',
@@ -313,6 +501,8 @@ def boot(build, firmware, stage, lock, modern=False, modules=(), observe=False):
                 passed = all(marker in text for marker in [
                     'FatMount(0) success', 'LoadIdentifier=LiberNT ARMv7',
                     'Options=/DEBUG /DEBUGPORT=COM1 /BAUDRATE=115200'])
+            if input_devices and not installed:
+                passed = passed and (input_verified if not login else 'ARM user session: PASS' in text)
             if not passed:
                 raise RuntimeError(f'{stage}: milestone not reached; inspect {log}')
         finally:
@@ -324,6 +514,11 @@ def boot(build, firmware, stage, lock, modern=False, modules=(), observe=False):
                     process.kill()
                     process.wait()
     result = {'stage': stage, 'passed': True, 'seconds': round(time.monotonic() - started, 2)}
+    if login:
+        result['account'] = 'tester-profile-and-explorer-desktop'
+        result['reused_image'] = reuse
+    if input_devices and not installed and not login:
+        result['input'] = 'tablet-cursor-lock-screen-and-password-field'
     if observe:
         result['continued_after_milestone'] = True
     if stage in ['storage', 'user', 'session', 'csr']:
@@ -331,7 +526,7 @@ def boot(build, firmware, stage, lock, modern=False, modules=(), observe=False):
         result['milestone'] = {'session': 'smss-boot-environment', 'user': 'native-smss-entry',
                                'storage': 'fat-file-io', 'csr': 'csrss-server-initialization'}[stage]
         if observe:
-            result['milestone'] = 'winlogon-and-lsass-initialization'
+            result['milestone'] = 'user-profile-and-explorer-desktop' if login else 'winlogon-and-lsass-initialization'
     if stage == 'clock':
         result.update(clock)
         result['expected_bugcheck'] = 'INACCESSIBLE_BOOT_DEVICE (empty storage fixture)'
@@ -346,9 +541,28 @@ def main():
     parser.add_argument('--no-build', action='store_true')
     parser.add_argument('--virtio-modern', action='store_true')
     parser.add_argument('--observe', action='store_true')
+    parser.add_argument('--installed-image', type=Path, help='observe an existing complete installed ARM image without repacking it')
+    parser.add_argument('--reuse-image', action='store_true', help='test login again without rebuilding or repacking the image')
+    parser.add_argument('--login', action='store_true', help='provision and test the local tester account')
+    parser.add_argument('--input', action='store_true', help='enable the VirtIO keyboard and tablet')
     args = parser.parse_args()
+    if args.installed_image:
+        if args.stage != 'csr' or args.login:
+            parser.error('--installed-image requires --stage csr without --login')
+        args.installed_image = args.installed_image.resolve()
+        args.no_build = args.input = args.observe = True
     if args.observe and args.stage != 'csr':
         parser.error('--observe requires --stage csr')
+    if args.reuse_image:
+        if not args.login:
+            parser.error('--reuse-image requires --stage csr --login')
+        args.no_build = True
+    if args.login:
+        args.input = True
+    if args.input:
+        if args.stage != 'csr':
+            parser.error('--input requires --stage csr')
+        args.observe = args.virtio_modern = True
     build = args.build_dir.resolve()
     cache = (build / 'CMakeCache.txt').read_text().splitlines()
     if not any(line.startswith('ARCH:') and line.split('=', 1)[-1] == 'arm' for line in cache):
@@ -366,8 +580,10 @@ def main():
                 run('ninja', '-C', build, 'virtblk', 'mountmgr', 'fastfat', 'arm_storage_test', 'ntdll', 'smss', 'autochk', 'csrss', 'win32k', 'ftfd', 'hidparse', 'csrsrv', '-j8', env=env)
             if args.stage == 'csr':
                 run('ninja', '-C', build, 'dxgmms2', 'dxgkrnl', 'softgpu', 'framebuf', 'npfs', 'ksecdd', '-j8', env=env)
+        if args.input and not args.no_build:
+            run('ninja', '-C', build, 'virtinput', 'hidclass', 'kbdhid', 'mouhid', 'kbdclass', 'mouclass', '-j8', env=env)
         if args.stage in ['user', 'session', 'csr']:
-            modules = session_modules(build, env, args.no_build, args.stage == 'csr')
+            modules = session_modules(build, env, args.no_build, args.stage == 'csr', args.login)
         if args.stage == 'csr':
             compiler = next(line.split('=', 1)[1] for line in cache if line.startswith('CMAKE_C_COMPILER:'))
             run('python3', ROOT / 'modules/rostests/boot/arm/test-syscall-stubs.py',
@@ -381,7 +597,7 @@ def main():
         try:
             for stage in stages:
                 try:
-                    result = boot(build, args.firmware.resolve(), stage, lock, args.virtio_modern, modules, args.observe)
+                    result = boot(build, args.firmware.resolve(), stage, lock, args.virtio_modern, modules, args.observe, args.input, args.login, args.reuse_image, args.installed_image)
                 except Exception as error:
                     results.append({'stage': stage, 'passed': False, 'error': str(error)})
                     raise

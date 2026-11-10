@@ -393,6 +393,7 @@ KiArmReservedExceptionContext:
     cpsid if
     mov r4, r0
     mov r5, r1
+    bl KiArmDeliverUserApc
     ldr r0, [r4, #TrCpsr]
     and r0, r0, #CPSRM_MASK
     cmp r0, #CPSRM_SVC

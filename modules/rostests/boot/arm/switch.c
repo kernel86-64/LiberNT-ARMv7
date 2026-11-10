@@ -15,6 +15,74 @@ static DECLSPEC_ALIGN(8) UCHAR SwitchLargeStack[16384];
 static volatile ULONG SwitchSteps, SwitchResumes, SwitchFailures;
 KTHREAD ArmSwitchMainThread;
 
+static DECLSPEC_ALIGN(8) UCHAR CalloutStack[KERNEL_LARGE_STACK_SIZE];
+static BOOLEAN CalloutAllocationFailure;
+static ULONG CalloutAllocations, CalloutReleases;
+
+NTSTATUS MiAllocateKernelCalloutStack(BOOLEAN Wait, PVOID *StackBase, PVOID *StackLimit)
+{
+    UNREFERENCED_PARAMETER(Wait);
+    ++CalloutAllocations;
+    *StackLimit = CalloutAllocationFailure ? NULL : CalloutStack;
+    *StackBase = CalloutAllocationFailure ? NULL : CalloutStack + sizeof(CalloutStack);
+    return CalloutAllocationFailure ? STATUS_NO_MEMORY : STATUS_SUCCESS;
+}
+
+BOOLEAN ArmTestDeleteCalloutStack(PVOID StackBase, BOOLEAN Large)
+{
+    if (StackBase != CalloutStack + sizeof(CalloutStack) || !Large) return FALSE;
+    ++CalloutReleases;
+    return TRUE;
+}
+
+static VOID NTAPI SwitchCallout(PVOID Parameter)
+{
+    volatile UCHAR Local[8192];
+    ULONG Index;
+    PKTHREAD Thread = KeGetCurrentThread();
+
+    if ((ULONG_PTR)Local < Thread->StackLimit ||
+        (ULONG_PTR)(Local + sizeof(Local)) > (ULONG_PTR)Thread->StackBase ||
+        Thread->StackBase != CalloutStack + sizeof(CalloutStack) ||
+        !Thread->LargeStack || !Thread->CalloutActive)
+        ++SwitchFailures;
+    for (Index = 0; Index < sizeof(Local); ++Index) Local[Index] = (UCHAR)Index;
+    for (Index = 0; Index < sizeof(Local); ++Index)
+        if (Local[Index] != (UCHAR)Index) ++SwitchFailures;
+    *(volatile ULONG *)Parameter = 0x5a5aa5a5;
+}
+
+static BOOLEAN SwitchExpandedCallout(VOID)
+{
+    PVOID Base = SwitchWorker.StackBase, Initial = SwitchWorker.InitialStack;
+    ULONG_PTR Limit = SwitchWorker.StackLimit;
+    BOOLEAN Large = SwitchWorker.LargeStack;
+    volatile ULONG Value = 0;
+
+    CalloutAllocations = CalloutReleases = 0;
+    CalloutAllocationFailure = FALSE;
+    if (KeExpandKernelStackAndCalloutEx(SwitchCallout, (PVOID)&Value,
+                                        MAXIMUM_EXPANSION_SIZE + 1, FALSE, NULL) != STATUS_INVALID_PARAMETER_3)
+        return FALSE;
+    SwitchPcr.CurrentIrql = DISPATCH_LEVEL;
+    if (KeExpandKernelStackAndCalloutEx(SwitchCallout, (PVOID)&Value,
+                                        KERNEL_STACK_SIZE, TRUE, NULL) != STATUS_INVALID_PARAMETER_4)
+        return FALSE;
+    SwitchPcr.CurrentIrql = PASSIVE_LEVEL;
+    CalloutAllocationFailure = TRUE;
+    if (KeExpandKernelStackAndCalloutEx(SwitchCallout, (PVOID)&Value,
+                                        KERNEL_STACK_SIZE, FALSE, NULL) != STATUS_NO_MEMORY || Value)
+        return FALSE;
+    CalloutAllocationFailure = FALSE;
+    if (KeExpandKernelStackAndCalloutEx(SwitchCallout, (PVOID)&Value,
+                                        KERNEL_STACK_SIZE, FALSE, NULL) != STATUS_SUCCESS || Value != 0x5a5aa5a5)
+        return FALSE;
+    return CalloutAllocations == 2 && CalloutReleases == 1 &&
+           SwitchWorker.StackBase == Base && SwitchWorker.StackLimit == Limit &&
+           SwitchWorker.InitialStack == Initial && SwitchWorker.LargeStack == Large &&
+           !SwitchWorker.CalloutActive && KeGetCurrentIrql() == PASSIVE_LEVEL;
+}
+
 VOID NTAPI KiRetireDpcList(PKPRCB Prcb)
 {
     ULONG_PTR Sp;
@@ -113,6 +181,7 @@ static DECLSPEC_NORETURN VOID NTAPI SwitchWorkerStart(PVOID Parameter)
 
     if (Parameter != &SwitchWorker) ++SwitchFailures;
     if (!SwitchKernelStack()) ++SwitchFailures;
+    if (!SwitchExpandedCallout()) ++SwitchFailures;
     __asm__ __volatile__("vmov %0, %1, d8" : "=r"(Low), "=r"(High));
     if (Low || High) ++SwitchFailures;
     __asm__ __volatile__("vmov.f64 d8, #16.0" ::: "d8");

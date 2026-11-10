@@ -31,6 +31,9 @@ elseif(ARCH STREQUAL "arm64")
         string/arm64/memchr.S
         string/arm64/memcmp.S
     )
+elseif(ARCH STREQUAL "arm")
+    list(APPEND LIBCNTPR_MEM_SOURCE mem/memchr.c)
+    list(APPEND LIBCNTPR_MEM_ASM_SOURCE mem/arm/memory.S)
 elseif(ARCH STREQUAL "riscv64")
     list(REMOVE_ITEM LIBCNTPR_MEM_SOURCE mem/memcmp.c)
     list(APPEND LIBCNTPR_MEM_SOURCE

@@ -8,10 +8,13 @@
 
 #include "ntfspch.h"
 
+static NTSTATUS NTAPI NtfsCommonCreate(PDEVICE_OBJECT VolumeDeviceObject, PIRP Irp);
+
 /* GLOBALS *****************************************************************/
 
 #ifdef ALLOC_PRAGMA
 #pragma alloc_text(PAGE, NtfsFsdCreate)
+#pragma alloc_text(PAGE, NtfsCommonCreate)
 #endif
 
 /* FUNCTIONS ****************************************************************/
@@ -1911,9 +1914,9 @@ Complete:
     return Status;
 }
 
-NTSTATUS
+static NTSTATUS
 NTAPI
-NtfsFsdCreate(_In_ PDEVICE_OBJECT VolumeDeviceObject,
+NtfsCommonCreate(_In_ PDEVICE_OBJECT VolumeDeviceObject,
               _Inout_ PIRP Irp)
 {
     if (VolumeDeviceObject != NtfsDiskFileSystemDeviceObject)
@@ -3418,4 +3421,27 @@ NtfsFsdCreate(_In_ PDEVICE_OBJECT VolumeDeviceObject,
     Irp->IoStatus.Status = STATUS_SUCCESS;
     IoCompleteRequest(Irp, IO_DISK_INCREMENT);
     return STATUS_SUCCESS;
+}
+
+typedef struct _NTFS_CREATE_CALLOUT
+{
+    PDEVICE_OBJECT Device;
+    PIRP Irp;
+    NTSTATUS Status;
+} NTFS_CREATE_CALLOUT;
+
+static VOID NTAPI NtfsCreateCallout(PVOID Parameter)
+{
+    NTFS_CREATE_CALLOUT *Callout = Parameter;
+    Callout->Status = NtfsCommonCreate(Callout->Device, Callout->Irp);
+}
+
+NTSTATUS NTAPI NtfsFsdCreate(PDEVICE_OBJECT Device, PIRP Irp)
+{
+    NTFS_CREATE_CALLOUT Callout = {Device, Irp, STATUS_UNSUCCESSFUL};
+    NTSTATUS Status;
+
+    Status = KeExpandKernelStackAndCalloutEx(NtfsCreateCallout, &Callout, KERNEL_STACK_SIZE, FALSE, NULL);
+    if (!NT_SUCCESS(Status)) return NtfsCompleteCreate(Irp, Status, 0);
+    return Callout.Status;
 }

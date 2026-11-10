@@ -118,7 +118,6 @@ RtlFillMemoryUlong(PVOID Destination,
     }
 }
 
-#ifdef _WIN64
 VOID
 NTAPI
 RtlFillMemoryUlonglong(
@@ -136,7 +135,6 @@ RtlFillMemoryUlonglong(
         Count--;
     }
 }
-#endif // _WIN64
 #endif // _M_AMD64
 
 #undef RtlMoveMemory

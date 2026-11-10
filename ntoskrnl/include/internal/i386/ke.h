@@ -1180,6 +1180,16 @@ extern ULONG KiDpcTimeCount[MAXIMUM_PROCESSORS];
 #define IOP_FIXED_INTERRUPT_LIMIT   24
 #define IOP_MESSAGE_VECTOR_BASE     0x50
 
+
+FORCEINLINE NTSTATUS KiExpandKernelStackCallout(PEXPAND_STACK_CALLOUT Callout, PVOID Parameter,
+                                                SIZE_T Size, BOOLEAN Wait)
+{
+    UNREFERENCED_PARAMETER(Size);
+    UNREFERENCED_PARAMETER(Wait);
+    Callout(Parameter);
+    return STATUS_SUCCESS;
+}
+
 #ifdef __cplusplus
 } // extern "C"
 #endif

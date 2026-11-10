@@ -1265,7 +1265,7 @@
 @ stdcall -arch=win32 RtlExtendedMagicDivide(long long long long long)
 @ stdcall RtlFillMemory(ptr long long)
 @ stdcall -arch=!x86_64 RtlFillMemoryUlong(ptr long long)
-@ stdcall -arch=arm64,riscv64 RtlFillMemoryUlonglong(ptr long int64)
+@ stdcall -arch=arm,arm64,riscv64 RtlFillMemoryUlonglong(ptr long int64)
 @ stdcall RtlFindClearBits(ptr long long)
 @ stdcall RtlFindClearBitsAndSet(ptr long long)
 @ stdcall RtlFindClearRuns(ptr ptr long long)
@@ -2122,7 +2122,7 @@
 @ stdcall DbgSetDebugPrintCallback(ptr long)
 @ stdcall DbgkLkmdRegisterCallback(ptr ptr long)
 @ stdcall DbgkLkmdUnregisterCallback(ptr)
-@ stdcall -arch=win64 DbgkWerCaptureLiveKernelDump(ptr long ptr ptr ptr ptr ptr ptr long)
+@ stdcall DbgkWerCaptureLiveKernelDump(ptr long ptr ptr ptr ptr ptr ptr long)
 @ stub -arch=win64 DbgkWerCaptureLiveKernelDump2
 @ stub -arch=win64 DifEnumeratePluginData
 @ stub -arch=win64 DifFindThreadContextData
@@ -2561,7 +2561,7 @@
 @ stdcall IoUnregisterBootDriverCallback(ptr)
 @ stub -arch=win64 IoUnregisterContainerNotification
 @ stub -arch=win64 IoUnregisterIoTracking
-@ stdcall -arch=win64 IoUnregisterPlugPlayNotificationEx(ptr)
+@ stdcall IoUnregisterPlugPlayNotificationEx(ptr)
 @ stub -arch=win64 IoUnregisterPriorityCallback
 @ stub -arch=win64 IoUpdateLinkShareAccess
 @ stub -arch=win64 IoUpdateLinkShareAccessEx
@@ -2680,10 +2680,10 @@
 @ stdcall -arch=win64 KeSetHardwareCounterConfiguration(ptr long)
 @ stdcall -arch=win64 KeSetHeteroCpuPolicyThread(ptr long long)
 @ stdcall -arch=win64 KeSetSelectedCpuSetsThread(ptr long ptr)
-@ stdcall -arch=win64 KeSetSystemGroupAffinityThread(ptr ptr)
+@ stdcall KeSetSystemGroupAffinityThread(ptr ptr)
 @ stdcall KeSetTargetProcessorDpcEx(ptr ptr)
 @ stdcall -version=0x603+ -arch=arm64 KeSetTimer2(ptr int64 int64 ptr)
-@ stdcall -arch=win64 KeShouldYieldProcessor()
+@ stdcall KeShouldYieldProcessor()
 @ stdcall -arch=win64 KeSizeOfAffinityEx(long)
 @ stub -arch=win64 KeSrcuAllocate
 @ stub -arch=win64 KeSrcuFree
@@ -2736,7 +2736,7 @@
 @ stub -arch=win64 MmGetPhysicalMemoryRangesEx2
 @ stub -arch=win64 MmGetSectionInformation
 @ stub -arch=win64 MmIsDriverSuspectForVerifier
-@ stdcall -arch=win64 MmIsDriverVerifyingByAddress(ptr)
+@ stdcall MmIsDriverVerifyingByAddress(ptr)
 @ stub -arch=win64 MmIsFileSectionActive
 @ stub -arch=arm64 MmLockPreChargedPagedPool
 @ stdcall -arch=win64 MmMapIoSpaceEx(long long long long)
@@ -3015,8 +3015,8 @@
 @ stub -arch=win64 RtlCheckTokenCapability
 @ stdcall RtlCheckTokenMembership(ptr ptr ptr)
 @ stub -arch=win64 RtlCheckTokenMembershipEx
-@ stdcall -arch=win64 RtlClearAllBitsEx(ptr) RtlClearAllBits64
-@ stdcall -arch=win64 RtlClearBitEx(ptr int64) RtlClearBit64
+@ stdcall RtlClearAllBitsEx(ptr) RtlClearAllBits64
+@ stdcall RtlClearBitEx(ptr int64) RtlClearBit64
 @ stub -arch=win64 RtlClearBitsEx
 @ stdcall RtlCmDecodeMemIoResource(ptr ptr)
 @ stdcall RtlCmEncodeMemIoResource(ptr long int64 int64)
@@ -3100,7 +3100,7 @@
 @ stub -arch=win64 RtlInitStrongEnumerationHashTable
 @ stdcall RtlInitUTF8String(ptr str)
 @ stub -arch=win64 RtlInitUTF8StringEx
-@ stdcall -arch=win64 RtlInitializeBitMapEx(ptr ptr int64) RtlInitializeBitMap64
+@ stdcall RtlInitializeBitMapEx(ptr ptr int64) RtlInitializeBitMap64
 @ stub -arch=win64 RtlInitializeCorrelationVector
 @ stub -arch=win64 RtlInitializeExtendedContext
 @ varargs RtlInitializeSidEx(ptr ptr long)
@@ -3186,7 +3186,7 @@
 @ stdcall RtlRunOnceInitialize(ptr)
 @ stdcall RtlSetActiveConsoleId(long)
 @ stub -arch=win64 RtlSetAllBitsEx
-@ stdcall -arch=win64 RtlSetBitEx(ptr int64) RtlSetBit64
+@ stdcall RtlSetBitEx(ptr int64) RtlSetBit64
 @ stub -arch=win64 RtlSetBitsEx
 @ stdcall RtlSetConsoleSessionForegroundProcessId(int64)
 @ stub -arch=win64 RtlSetDynamicTimeZoneInformation
@@ -3203,7 +3203,7 @@
 @ stdcall RtlStringFromGUIDEx(ptr ptr long)
 @ stub -arch=win64 RtlStronglyEnumerateEntryHashTable
 @ stdcall RtlSuffixUnicodeString(ptr ptr long)
-@ stdcall -arch=win64 RtlTestBitEx(ptr int64) RtlTestBit64
+@ stdcall RtlTestBitEx(ptr int64) RtlTestBit64
 @ stdcall RtlUTF8StringToUnicodeString(ptr ptr long)
 @ stub -arch=arm64 RtlUdiv128
 @ stub -arch=win64 RtlUnicodeStringToInt64

@@ -553,3 +553,12 @@ VOID NTAPI KiFreezeIfRequested(VOID);
 #ifdef __cplusplus
 }
 #endif
+
+FORCEINLINE NTSTATUS KiExpandKernelStackCallout(PEXPAND_STACK_CALLOUT Callout, PVOID Parameter,
+                                                SIZE_T Size, BOOLEAN Wait)
+{
+    UNREFERENCED_PARAMETER(Size);
+    UNREFERENCED_PARAMETER(Wait);
+    Callout(Parameter);
+    return STATUS_SUCCESS;
+}

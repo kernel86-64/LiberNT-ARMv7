@@ -1,0 +1,31 @@
+; PROJECT:     LiberNT boot tests
+; LICENSE:     GPL-3.0-or-later
+; PURPOSE:     First-boot local account provisioning in the QEMU image
+; COPYRIGHT:   Copyright 2026 LiberNT contributors
+
+[Version]
+Signature = "$Windows NT$"
+
+[AddReg]
+HKLM,"SYSTEM\Setup","SetupType",0x00010001,2
+HKLM,"SYSTEM\Setup","SystemSetupInProgress",0x00010001,1
+HKLM,"SYSTEM\Setup","CmdLine",0x00020000,"%SystemRoot%\system32\arm_account_setup.exe"
+HKLM,"SOFTWARE\Microsoft\Windows NT\CurrentVersion\Winlogon","Userinit",0x00020000,"%SystemRoot%\system32\arm_account_setup.exe --verify-session,%SystemRoot%\system32\userinit.exe"
+HKLM,"SOFTWARE\Microsoft\Windows NT\CurrentVersion\Winlogon","Shell",0x00020000,"%SystemRoot%\explorer.exe"
+HKLM,"SOFTWARE\Microsoft\Windows NT\CurrentVersion\ProfileList","ProfilesDirectory",0x00020000,"%SystemDrive%\Users"
+HKLM,"SOFTWARE\Microsoft\Windows NT\CurrentVersion\ProfileList","Default",0x00020000,"%SystemDrive%\Users\Default"
+HKLM,"SOFTWARE\Microsoft\Windows NT\CurrentVersion\ProfileList","Public",0x00020000,"%SystemDrive%\Users\Public"
+HKLM,"SOFTWARE\Microsoft\Windows NT\CurrentVersion\ProfileList","ProgramData",0x00020000,"%SystemDrive%\ProgramData"
+HKLM,"SOFTWARE\Microsoft\Windows NT\CurrentVersion\ProfileList","DefaultUserProfile",0x00000000,"Default"
+HKLM,"SOFTWARE\Microsoft\Windows NT\CurrentVersion\ProfileList","AllUsersProfile",0x00000000,"Public"
+HKCU,"Control Panel\International","Locale",0x00000000,"00000409"
+HKCU,"Control Panel\International","LocaleName",0x00000000,"en-US"
+HKLM,"SYSTEM\CurrentControlSet\Control\Nls\Locale","00000409",0x00000000,"1"
+HKLM,"SYSTEM\CurrentControlSet\Control\Nls\Locale\Alternate Sorts",,0x00000010
+HKLM,"SYSTEM\CurrentControlSet\Control\Nls\Language Groups","1",0x00000000,"1"
+HKLM,"SYSTEM\CurrentControlSet\Services\RpcSs","Type",0x00010001,16
+HKLM,"SYSTEM\CurrentControlSet\Services\RpcSs","Start",0x00010001,2
+HKLM,"SYSTEM\CurrentControlSet\Services\RpcSs","ErrorControl",0x00010001,1
+HKLM,"SYSTEM\CurrentControlSet\Services\RpcSs","Group",0x00000000,"COM Infrastructure"
+HKLM,"SYSTEM\CurrentControlSet\Services\RpcSs","ObjectName",0x00000000,"LocalSystem"
+HKLM,"SYSTEM\CurrentControlSet\Services\RpcSs","ImagePath",0x00020000,"%SystemRoot%\system32\rpcss.exe"

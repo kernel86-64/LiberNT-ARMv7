@@ -189,7 +189,7 @@ HidClassPDO_HandleQueryHardwareId(
     // call mini-driver
     //
     Status = HidClassFDO_DispatchRequestSynchronous(DeviceObject, Irp);
-    if (!NT_SUCCESS(Status))
+    if (!NT_SUCCESS(Status) && Status != STATUS_NOT_SUPPORTED)
     {
         //
         // failed
@@ -197,7 +197,8 @@ HidClassPDO_HandleQueryHardwareId(
         return Status;
     }
 
-    Ptr = wcsstr((LPWSTR)Irp->IoStatus.Information, L"&MI_");
+    Ptr = NT_SUCCESS(Status) && Irp->IoStatus.Information ?
+        wcsstr((LPWSTR)Irp->IoStatus.Information, L"&MI_") : NULL;
     if (Ptr && Ptr[4] && Ptr[5])
     {
         RtlCopyMemory(Function, Ptr, 6 * sizeof(WCHAR));
@@ -281,7 +282,8 @@ HidClassPDO_HandleQueryHardwareId(
     //
     // free old buffer
     //
-    ExFreePoolWithTag((PVOID)Irp->IoStatus.Information, 0);
+    if (NT_SUCCESS(Status) && Irp->IoStatus.Information)
+        ExFreePoolWithTag((PVOID)Irp->IoStatus.Information, 0);
 
     //
     // allocate buffer

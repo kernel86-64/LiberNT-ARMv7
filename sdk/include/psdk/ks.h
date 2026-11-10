@@ -5496,7 +5496,7 @@ KSDEVICE_PROFILE_INFO, *PKSDEVICE_PROFILE_INFO;
 #endif
 
 _IRQL_requires_max_(PASSIVE_LEVEL)
-PKSDEVICE __inline
+static __inline PKSDEVICE
 KsFilterGetDevice(
     _In_ PKSFILTER Filter
     )

@@ -25,6 +25,7 @@ int main(void)
     const MI_ARCH_DESCRIPTOR *Arch = MiArchDescribe();
 
     CHECK(sizeof(MI_PTE) == 8);
+    CHECK(Arch->UserAddressStart == 0x10000);
     CHECK(Arch->PagingLevels == 3 && Arch->VirtualAddressBits == 32 && Arch->PhysicalAddressBits == 40);
     CHECK(Arch->Level[2].EntryCount == 4 && Arch->Level[1].EntryCount == 512 && Arch->Level[0].EntryCount == 512);
     CHECK(Arch->PteBytes == 8 && Arch->LargePageSize == 0x200000);

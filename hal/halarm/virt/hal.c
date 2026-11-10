@@ -7,10 +7,15 @@
 
 #include <hal.h>
 #include <armvirt.h>
+#include <hal/acpi_pci.h>
 #undef DbgPrint
 #undef KeGetCurrentIrql
 #undef READ_PORT_UCHAR
 #undef WRITE_PORT_UCHAR
+#undef READ_PORT_USHORT
+#undef READ_PORT_ULONG
+#undef WRITE_PORT_USHORT
+#undef WRITE_PORT_ULONG
 
 static ULONG HalpInterruptCount;
 static ULONG HalpIncrement = 100000;
@@ -170,15 +175,17 @@ BOOLEAN NTAPI HalpArmDispatchInterrupt(ULONG Source, PKTRAP_FRAME TrapFrame)
     if (HalpTimerIncrement != HalpIncrement)
     {
         HalpTimerIncrement = HalpIncrement;
-        HalpTimerDeadline = Now + max((ULONGLONG)HalpTimerFrequency * HalpTimerIncrement / 10000000, 1);
+        Period = max((ULONGLONG)HalpTimerFrequency * HalpTimerIncrement / 10000000, 1);
+        HalpTimerDeadline = Now + Period;
     }
-    HalpSetTimerDeadline(HalpTimerDeadline);
     while (Remaining)
     {
         Increment = (ULONG)min(Remaining, (ULONGLONG)MAXULONG);
         KeUpdateSystemTime(TrapFrame, Increment, TrapFrame->PreviousIrql);
         Remaining -= Increment;
     }
+    Now = KeQueryPerformanceCounter(NULL).QuadPart;
+    HalpSetTimerDeadline((LONG64)(Now - HalpTimerDeadline) >= 0 ? Now + Period : HalpTimerDeadline);
     return TRUE;
 }
 
@@ -388,3 +395,173 @@ VOID NTAPI HalReportResourceUsage(VOID)
 
 UCHAR NTAPI READ_PORT_UCHAR(PUCHAR Port) { return READ_REGISTER_UCHAR(Port); }
 VOID NTAPI WRITE_PORT_UCHAR(PUCHAR Port, UCHAR Value) { WRITE_REGISTER_UCHAR(Port, Value); }
+
+USHORT NTAPI READ_PORT_USHORT(PUSHORT Port) { return READ_REGISTER_USHORT(Port); }
+ULONG NTAPI READ_PORT_ULONG(PULONG Port) { return READ_REGISTER_ULONG(Port); }
+VOID NTAPI WRITE_PORT_USHORT(PUSHORT Port, USHORT Value) { WRITE_REGISTER_USHORT(Port, Value); }
+VOID NTAPI WRITE_PORT_ULONG(PULONG Port, ULONG Value) { WRITE_REGISTER_ULONG(Port, Value); }
+
+BOOLEAN NTAPI HalMakeBeep(ULONG Frequency)
+{
+    UNREFERENCED_PARAMETER(Frequency);
+    return FALSE;
+}
+
+PADAPTER_OBJECT NTAPI HalGetAdapter(PDEVICE_DESCRIPTION Description, PULONG NumberOfMapRegisters)
+{
+    UNREFERENCED_PARAMETER(Description);
+    if (NumberOfMapRegisters) *NumberOfMapRegisters = 0;
+    return NULL;
+}
+
+KIRQL NTAPI HalConvertDeviceIdtToIrql(ULONG Vector)
+{
+    return HalpArmGetInterruptIrql(Vector);
+}
+
+NTSTATUS NTAPI HalGetInterruptTargetInformation(PHAL_INTERRUPT_TARGET_INFORMATION Information)
+{
+    if (!Information || Information->Version != HAL_INTERRUPT_TARGET_INFORMATION_VERSION ||
+        (Information->TargetProcessors & ~(KAFFINITY)1))
+        return STATUS_INVALID_PARAMETER;
+    Information->TargetProcessors = 1;
+    Information->ProcessorNumber = 0;
+    Information->DestinationId = 0;
+    return STATUS_SUCCESS;
+}
+
+NTSTATUS NTAPI HalGetMessageRoutingInfo(PHAL_MESSAGE_ROUTING_INFO Information)
+{
+    if (!Information || Information->Version != HAL_MESSAGE_ROUTING_INFO_VERSION)
+        return STATUS_INVALID_PARAMETER;
+    return STATUS_NOT_SUPPORTED;
+}
+
+NTSTATUS NTAPI HalGetMemoryCachingRequirements(PHYSICAL_ADDRESS Address, SIZE_T Length,
+                                               MEMORY_CACHING_TYPE *CacheType)
+{
+    UNREFERENCED_PARAMETER(Address);
+    UNREFERENCED_PARAMETER(Length);
+    if (!CacheType) return STATUS_INVALID_PARAMETER;
+    *CacheType = MmNonCached;
+    return STATUS_NOT_SUPPORTED;
+}
+
+VOID NTAPI HalpConfigurePciRootBridge(const HAL_ACPI_PCI_ROOT_INFO *Information)
+{
+    UNREFERENCED_PARAMETER(Information);
+}
+
+VOID NTAPI HalpRegisterPciRouteQuery(PHAL_ACPI_PCI_ROUTE_QUERY Provider)
+{
+    UNREFERENCED_PARAMETER(Provider);
+}
+
+VOID NTAPI READ_PORT_BUFFER_UCHAR(PUCHAR Port, PUCHAR Buffer, ULONG Count)
+{
+    while (Count--) *Buffer++ = READ_PORT_UCHAR(Port);
+}
+
+VOID NTAPI WRITE_PORT_BUFFER_UCHAR(PUCHAR Port, PUCHAR Buffer, ULONG Count)
+{
+    while (Count--) WRITE_PORT_UCHAR(Port, *Buffer++);
+}
+
+VOID NTAPI READ_PORT_BUFFER_USHORT(PUSHORT Port, PUSHORT Buffer, ULONG Count)
+{
+    while (Count--) *Buffer++ = READ_PORT_USHORT(Port);
+}
+
+VOID NTAPI WRITE_PORT_BUFFER_USHORT(PUSHORT Port, PUSHORT Buffer, ULONG Count)
+{
+    while (Count--) WRITE_PORT_USHORT(Port, *Buffer++);
+}
+
+VOID NTAPI READ_PORT_BUFFER_ULONG(PULONG Port, PULONG Buffer, ULONG Count)
+{
+    while (Count--) *Buffer++ = READ_PORT_ULONG(Port);
+}
+
+VOID NTAPI WRITE_PORT_BUFFER_ULONG(PULONG Port, PULONG Buffer, ULONG Count)
+{
+    while (Count--) WRITE_PORT_ULONG(Port, *Buffer++);
+}
+
+ULONG NTAPI HalGetBusData(BUS_DATA_TYPE Type, ULONG Bus, ULONG Slot, PVOID Buffer, ULONG Length)
+{
+    return HalGetBusDataByOffset(Type, Bus, Slot, Buffer, 0, Length);
+}
+
+NTSTATUS NTAPI HalAssignSlotResources(PUNICODE_STRING RegistryPath, PUNICODE_STRING ClassName,
+                                      PDRIVER_OBJECT Driver, PDEVICE_OBJECT Device,
+                                      INTERFACE_TYPE Type, ULONG Bus, ULONG Slot,
+                                      PCM_RESOURCE_LIST *Resources)
+{
+    UNREFERENCED_PARAMETER(RegistryPath);
+    UNREFERENCED_PARAMETER(ClassName);
+    UNREFERENCED_PARAMETER(Driver);
+    UNREFERENCED_PARAMETER(Device);
+    UNREFERENCED_PARAMETER(Type);
+    UNREFERENCED_PARAMETER(Bus);
+    UNREFERENCED_PARAMETER(Slot);
+    UNREFERENCED_PARAMETER(Resources);
+    return STATUS_NOT_SUPPORTED;
+}
+
+PVOID NTAPI HalAllocateCommonBuffer(PADAPTER_OBJECT Adapter, ULONG Length,
+                                    PPHYSICAL_ADDRESS Address, BOOLEAN Cached)
+{
+    UNREFERENCED_PARAMETER(Adapter);
+    UNREFERENCED_PARAMETER(Length);
+    UNREFERENCED_PARAMETER(Cached);
+    if (Address) Address->QuadPart = 0;
+    return NULL;
+}
+
+VOID NTAPI HalFreeCommonBuffer(PADAPTER_OBJECT Adapter, ULONG Length,
+                               PHYSICAL_ADDRESS Address, PVOID Buffer, BOOLEAN Cached)
+{
+    UNREFERENCED_PARAMETER(Adapter);
+    UNREFERENCED_PARAMETER(Length);
+    UNREFERENCED_PARAMETER(Address);
+    UNREFERENCED_PARAMETER(Buffer);
+    UNREFERENCED_PARAMETER(Cached);
+}
+
+VOID NTAPI IoFreeAdapterChannel(PADAPTER_OBJECT Adapter)
+{
+    UNREFERENCED_PARAMETER(Adapter);
+}
+
+VOID NTAPI IoFreeMapRegisters(PADAPTER_OBJECT Adapter, PVOID Registers, ULONG Count)
+{
+    UNREFERENCED_PARAMETER(Adapter);
+    UNREFERENCED_PARAMETER(Registers);
+    UNREFERENCED_PARAMETER(Count);
+}
+
+BOOLEAN NTAPI IoFlushAdapterBuffers(PADAPTER_OBJECT Adapter, PMDL Mdl, PVOID Registers,
+                                    PVOID CurrentVa, ULONG Length, BOOLEAN WriteToDevice)
+{
+    UNREFERENCED_PARAMETER(Adapter);
+    UNREFERENCED_PARAMETER(Mdl);
+    UNREFERENCED_PARAMETER(Registers);
+    UNREFERENCED_PARAMETER(CurrentVa);
+    UNREFERENCED_PARAMETER(Length);
+    UNREFERENCED_PARAMETER(WriteToDevice);
+    return FALSE;
+}
+
+PHYSICAL_ADDRESS NTAPI IoMapTransfer(PADAPTER_OBJECT Adapter, PMDL Mdl, PVOID Registers,
+                                     PVOID CurrentVa, PULONG Length, BOOLEAN WriteToDevice)
+{
+    PHYSICAL_ADDRESS Address;
+    UNREFERENCED_PARAMETER(Adapter);
+    UNREFERENCED_PARAMETER(Mdl);
+    UNREFERENCED_PARAMETER(Registers);
+    UNREFERENCED_PARAMETER(CurrentVa);
+    UNREFERENCED_PARAMETER(WriteToDevice);
+    if (Length) *Length = 0;
+    Address.QuadPart = 0;
+    return Address;
+}

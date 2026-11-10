@@ -230,6 +230,8 @@ KiLeaveServiceException(
 #define KiGetPreviousMode(tf) \
     ((((tf)->Cpsr & CPSRM_MASK) == CPSRM_USER) ? UserMode : KernelMode)
 
+VOID KiArmDeliverUserApc(PKTRAP_FRAME TrapFrame, PKEXCEPTION_FRAME ExceptionFrame);
+
 #define KI_DPC_NORMAL_PROCESSING_REQUESTED 0x00000002L
 #define KI_DPC_NORMAL_DPC_PRESENT          0x00000010L
 #define KI_DPC_THREAD_ACTIVE               0x00010000L
@@ -383,5 +385,10 @@ DECLSPEC_NORETURN VOID
 KiExceptionExit(PKTRAP_FRAME TrapFrame, PKEXCEPTION_FRAME ExceptionFrame);
 
 KIRQL NTAPI HalpArmGetInterruptIrql(ULONG Source);
+KIRQL KiArmGetInterruptIrql(ULONG Source);
 VOID NTAPI KiRetireDpcListInDpcStack(PKPRCB Prcb, PVOID DpcStack);
 BOOLEAN NTAPI HalpArmDispatchInterrupt(ULONG Source, PKTRAP_FRAME TrapFrame);
+
+NTSTATUS KiExpandKernelStackCallout(PEXPAND_STACK_CALLOUT Callout, PVOID Parameter,
+                                     SIZE_T Size, BOOLEAN Wait);
+VOID KiArmCallOnKernelStack(PEXPAND_STACK_CALLOUT Callout, PVOID Parameter, PVOID StackBase, ULONG Flags);

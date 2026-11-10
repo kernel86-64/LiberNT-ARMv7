@@ -28,7 +28,7 @@ VOID KiInterruptHandler(PKTRAP_FRAME TrapFrame, ULONG Reserved)
     UNREFERENCED_PARAMETER(Reserved);
     if (Source >= 1020)
         return;
-    Level = HalpArmGetInterruptIrql(Source);
+    Level = KiArmGetInterruptIrql(Source);
     KeGetCurrentPrcb()->InterruptCount++;
     TrapFrame->PreviousIrql = OldIrql;
     KfRaiseIrql(Level);

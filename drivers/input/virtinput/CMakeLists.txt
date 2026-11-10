@@ -1,0 +1,5 @@
+add_library(virtinput MODULE virtinput.c reports.c qemu_virt.c)
+set_module_type(virtinput kernelmodedriver)
+add_importlibs(virtinput hidclass ntoskrnl hal)
+add_cd_file(TARGET virtinput DESTINATION reactos/system32/drivers NO_CAB FOR all)
+add_registry_inf(virtinput_reg.inf)

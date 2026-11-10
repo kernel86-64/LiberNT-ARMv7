@@ -163,11 +163,10 @@ SetUserHiveSecurity(
                                   0,
                                   0};
     PSID Sids[sizeof(SidStrings) / sizeof(SidStrings[0])] = {NULL};
-    SECURITY_DESCRIPTOR SecurityDescriptor;
+    WCHAR KeyName[MAX_PATH];
     PACL pDacl = NULL;
     DWORD dwDaclSize;
     DWORD dwError = ERROR_SUCCESS;
-    HKEY hKey;
     ULONG i;
 
     dwDaclSize = sizeof(ACL) + FIELD_OFFSET(ACCESS_ALLOWED_ACE, SidStart) + GetLengthSid(pUserSid);
@@ -204,19 +203,13 @@ SetUserHiveSecurity(
         }
     }
 
-    if (!InitializeSecurityDescriptor(&SecurityDescriptor, SECURITY_DESCRIPTOR_REVISION) ||
-        !SetSecurityDescriptorDacl(&SecurityDescriptor, TRUE, pDacl, FALSE))
-    {
-        dwError = GetLastError();
-        goto done;
-    }
-
-    dwError = RegOpenKeyExW(HKEY_USERS, pszSidString, 0, WRITE_DAC, &hKey);
+    dwError = HRESULT_CODE(StringCchPrintfW(KeyName, ARRAYSIZE(KeyName),
+                                           L"USERS\\%s", pszSidString));
     if (dwError == ERROR_SUCCESS)
-    {
-        dwError = RegSetKeySecurity(hKey, DACL_SECURITY_INFORMATION, &SecurityDescriptor);
-        RegCloseKey(hKey);
-    }
+        dwError = TreeResetNamedSecurityInfoW(KeyName, SE_REGISTRY_KEY,
+                                               DACL_SECURITY_INFORMATION | PROTECTED_DACL_SECURITY_INFORMATION,
+                                               NULL, NULL, pDacl, NULL, TRUE,
+                                               NULL, ProgressInvokeNever, NULL);
 
 done:
     if (pDacl != NULL)

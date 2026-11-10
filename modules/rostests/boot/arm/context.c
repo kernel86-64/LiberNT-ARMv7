@@ -23,13 +23,33 @@ VOID NTAPI ProbeForWrite(PVOID Address, SIZE_T Length, ULONG Alignment)
         KeBugCheck(INVALID_KERNEL_HANDLE);
 }
 
-static DECLSPEC_NORETURN VOID ArmContextUnexpectedIrql(VOID)
+static KIRQL FASTCALL ArmContextRaiseIrql(KIRQL Irql)
 {
-    KeBugCheck(IRQL_NOT_LESS_OR_EQUAL);
+    KIRQL OldIrql = ContextPcr.CurrentIrql;
+    if (Irql < OldIrql) KeBugCheck(IRQL_NOT_GREATER_OR_EQUAL);
+    ContextPcr.CurrentIrql = Irql;
+    return OldIrql;
 }
 
-PVOID __imp_KfRaiseIrql = ArmContextUnexpectedIrql;
-PVOID __imp_KfLowerIrql = ArmContextUnexpectedIrql;
+static VOID FASTCALL ArmContextLowerIrql(KIRQL Irql)
+{
+    if (Irql > ContextPcr.CurrentIrql) KeBugCheck(IRQL_NOT_LESS_OR_EQUAL);
+    ContextPcr.CurrentIrql = Irql;
+}
+
+PVOID __imp_KfRaiseIrql = ArmContextRaiseIrql;
+PVOID __imp_KfLowerIrql = ArmContextLowerIrql;
+static ULONG ContextApcDelivered;
+
+VOID NTAPI KiDeliverApc(KPROCESSOR_MODE Mode, PKEXCEPTION_FRAME Exception, PKTRAP_FRAME Trap)
+{
+    if (Mode != UserMode || KeGetCurrentIrql() != APC_LEVEL || !Exception || !Trap)
+        KeBugCheck(IRQL_NOT_LESS_OR_EQUAL);
+    ContextApcDelivered++;
+    KeGetCurrentThread()->ApcState.UserApcPending = FALSE;
+    KiInitializeUserApc(Exception, Trap, (PKNORMAL_ROUTINE)ArmTestApcThunk,
+                        NULL, (PVOID)0x10000000, NULL);
+}
 
 BOOLEAN ArmTestContextFrames(VOID)
 {
@@ -46,6 +66,7 @@ BOOLEAN ArmTestContextFrames(VOID)
     BOOLEAN Passed;
 
     RtlZeroMemory(&ContextPcr, sizeof(ContextPcr));
+    ContextPcr.CurrentPrcb = &ContextPcr.Prcb;
     ContextPcr.CurrentIrql = APC_LEVEL;
     __asm__ __volatile__("mrs %0, cpsr\n\tcpsid if" : "=r"(Cpsr) :: "memory");
     __asm__ __volatile__("mrc p15, 0, %0, c13, c0, 4" : "=r"(Pcr));
@@ -98,6 +119,22 @@ BOOLEAN ArmTestContextFrames(VOID)
         (Trap.Cpsr & (CPSRM_MASK | CPSRC_THUMB)) != (CPSRM_USER | CPSRC_THUMB))
         Passed = FALSE;
     if (!ArmTestApcDispatch((PCONTEXT)Trap.Sp)) Passed = FALSE;
+    ContextPcr.Prcb.CurrentThread = &Thread;
+    ContextPcr.CurrentIrql = PASSIVE_LEVEL;
+    ContextApcDelivered = 0;
+    KeContextToTrapFrame(&Input, &Exception, &Trap, CONTEXT_FULL, UserMode);
+    KiArmDeliverUserApc(&Trap, &Exception);
+    if (ContextApcDelivered || Trap.Pc != Input.Pc) Passed = FALSE;
+    Thread.ApcState.UserApcPending = TRUE;
+    Trap.Cpsr = CPSRM_SVC;
+    KiArmDeliverUserApc(&Trap, &Exception);
+    if (ContextApcDelivered || !Thread.ApcState.UserApcPending) Passed = FALSE;
+    Trap.Cpsr = Input.Cpsr;
+    KiArmDeliverUserApc(&Trap, &Exception);
+    if (ContextApcDelivered != 1 || Thread.ApcState.UserApcPending ||
+        ContextPcr.CurrentIrql != PASSIVE_LEVEL ||
+        Trap.Pc != ((ULONG_PTR)ArmTestUserApcDispatcher | 1) ||
+        !ArmTestApcDispatch((PCONTEXT)Trap.Sp)) Passed = FALSE;
     Input.Cpsr = CPSRM_SVC;
     Input.R0 = 0x77777777;
     KeContextToTrapFrame(&Input, &Exception, &Trap, CONTEXT_CONTROL, KernelMode);

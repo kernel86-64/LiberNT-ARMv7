@@ -760,6 +760,16 @@ KiClearDpcThreadState(
 #define IOP_MESSAGE_VECTOR_BASE     0x50
 #define IOP_MESSAGE_INTERRUPT_IRQL  (CLOCK_LEVEL - 1)
 
+
+FORCEINLINE NTSTATUS KiExpandKernelStackCallout(PEXPAND_STACK_CALLOUT Callout, PVOID Parameter,
+                                                SIZE_T Size, BOOLEAN Wait)
+{
+    UNREFERENCED_PARAMETER(Size);
+    UNREFERENCED_PARAMETER(Wait);
+    Callout(Parameter);
+    return STATUS_SUCCESS;
+}
+
 #ifdef __cplusplus
 } // extern "C"
 #endif

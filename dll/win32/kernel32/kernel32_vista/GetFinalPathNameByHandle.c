@@ -138,7 +138,7 @@ GetFinalPathNameByHandleW(
     WCHAR VolumeBuffer[sizeof("\\Device\\Volume{01234567-89ab-cdef-0123-456789abcdef}")];
     IO_STATUS_BLOCK IoStatusBlock;
     PWSTR PathSplit;
-    UNICODE_STRING DeviceName, RelativePath, VolumeName;
+    UNICODE_STRING DeviceName, RelativePath, VolumeName, Suffix;
     SIZE_T VolumeLength;
     ULONG VolumeType;
     NTSTATUS Status;
@@ -223,7 +223,22 @@ GetFinalPathNameByHandleW(
     }
 
     /* If the NT path was requested, we return the name as it is */
-    if (VolumeType == VOLUME_NAME_NT)
+    DeviceName = *ObjectName;
+    if (FilePath.Length && ObjectName->Length > FilePath.Length)
+    {
+        Suffix.Buffer = (PWSTR)((PBYTE)ObjectName->Buffer + ObjectName->Length - FilePath.Length);
+        Suffix.Length = Suffix.MaximumLength = FilePath.Length;
+    }
+    else
+    {
+        Suffix.Buffer = NULL;
+        Suffix.Length = Suffix.MaximumLength = 0;
+    }
+    if (FilePath.Length && RtlEqualUnicodeString(&Suffix, &FilePath, TRUE))
+    {
+        DeviceName.Length -= FilePath.Length;
+    }
+    else
     {
         PathSplit = wcschr(&ObjectName->Buffer[sizeof("\\Device\\") - 1], L'\\');
         if (PathSplit == NULL)
@@ -233,7 +248,11 @@ GetFinalPathNameByHandleW(
             return 0;
         }
         DeviceName.Length = (USHORT)(PathSplit - ObjectName->Buffer) * sizeof(WCHAR);
+    }
+    DeviceName.MaximumLength = DeviceName.Length;
 
+    if (VolumeType == VOLUME_NAME_NT)
+    {
         /* Calculate the final length and validate the buffer size */
         FinalLength = (DeviceName.Length + FilePath.Length) / sizeof(WCHAR);
         if (cchFilePath < FinalLength + 1)
@@ -250,19 +269,6 @@ GetFinalPathNameByHandleW(
         /* Return the length of the name */
         return FinalLength;
     }
-
-    /* For everything else we need to split the path */
-    PathSplit = wcschr(&ObjectName->Buffer[sizeof("\\Device\\") - 1], L'\\');
-    if (PathSplit == NULL)
-    {
-        DPRINT1("Invalid object name: %wZ\n", ObjectName);
-        SetLastError(ERROR_INVALID_HANDLE);
-        return 0;
-    }
-
-    DeviceName.Buffer = ObjectName->Buffer;
-    DeviceName.Length = (USHORT)(PathSplit - ObjectName->Buffer) * sizeof(WCHAR);
-    DeviceName.MaximumLength = DeviceName.Length;
 
     RelativePath = FilePath;
     if (RelativePath.Length >= sizeof(WCHAR) && RelativePath.Buffer[0] == L'\\')

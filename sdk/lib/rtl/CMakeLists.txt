@@ -52,6 +52,7 @@ list(APPEND SOURCE
     atom.c
     avltable.c
     bitmap.c
+    bitmap64.c
     bootdata.c
     compress.c
     crc32.c
@@ -131,7 +132,6 @@ elseif(ARCH STREQUAL "amd64")
         amd64/slist.S
         amd64/unwind-asm.s)
     list(APPEND SOURCE
-        bitmap64.c
         byteswap.c
         dynfntbl.c
         amd64/except.c
@@ -166,7 +166,6 @@ elseif(ARCH STREQUAL "arm64")
         list(APPEND ASM_SOURCE arm64/pacauth_asm.S)
     endif()
     list(APPEND SOURCE
-        bitmap64.c
         arm64/context.c
         arm64/except.c
         arm64/unwind.c
@@ -181,7 +180,6 @@ elseif(ARCH STREQUAL "riscv64")
         riscv64/restore_asm.S
         riscv64/except_asm.S)
     list(APPEND SOURCE
-        bitmap64.c
         byteswap.c
         dynfntbl.c
         mem.c

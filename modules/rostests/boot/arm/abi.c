@@ -26,6 +26,9 @@ extern BOOLEAN ArmTestKernelSwitch(void);
 extern BOOLEAN ArmTestRelocations(void);
 extern BOOLEAN ArmTestDebugServices(void);
 extern BOOLEAN ArmTestSystemCalls(void);
+extern BOOLEAN ArmTestInterrupts(void);
+extern BOOLEAN ArmTestInput(void);
+extern BOOLEAN ArmTestMemory(void);
 extern BOOLEAN ArmTestKernelFaultDecoding(void);
 extern BOOLEAN ArmTestProcessorControl(void);
 extern BOOLEAN ArmTestUartReceive(void);
@@ -75,6 +78,9 @@ EfiEntry(EFI_HANDLE ImageHandle, EFI_SYSTEM_TABLE *SystemTable)
     Passed = ArmTestRelocations() && Passed;
     Passed = ArmTestDebugServices() && Passed;
     Passed = ArmTestSystemCalls() && Passed;
+    Passed = ArmTestInterrupts() && Passed;
+    Passed = ArmTestInput() && Passed;
+    Passed = ArmTestMemory() && Passed;
     Passed = ArmTestKernelFaultDecoding() && Passed;
     Passed = ArmTestProcessorControl() && Passed;
     Passed = ArmTestUartReceive() && Passed;
@@ -84,6 +90,9 @@ EfiEntry(EFI_HANDLE ImageHandle, EFI_SYSTEM_TABLE *SystemTable)
     Passed = Passed && (_InterlockedAdd(&Counter, 2) == 42) && (Counter == 42);
     Passed = Passed && (_InterlockedAdd64(&Counter64, 2) == 0x100000002LL) &&
              (Counter64 == 0x100000002LL);
+    Passed = Passed && (_InterlockedAdd64_nf(&Counter64, -2) == 0x100000000LL) &&
+             (Counter64 == 0x100000000LL);
+    __prefetch((const void *)&Counter64);
     Value = _setjmp(Buffer, NULL);
     if (Value == 0)
         longjmp(Buffer, 42);

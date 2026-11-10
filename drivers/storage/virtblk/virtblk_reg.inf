@@ -1,0 +1,14 @@
+; PROJECT:     LiberNT VirtIO block driver
+; LICENSE:     GPL-3.0-or-later
+; PURPOSE:     Register the QEMU VirtIO MMIO boot storage driver
+; COPYRIGHT:   Copyright 2026 LiberNT contributors
+
+[Version]
+Signature = "$Windows NT$"
+
+[AddReg]
+HKLM,"SYSTEM\CurrentControlSet\Services\virtblk","Type",0x00010001,1
+HKLM,"SYSTEM\CurrentControlSet\Services\virtblk","Start",0x00010001,0
+HKLM,"SYSTEM\CurrentControlSet\Services\virtblk","ErrorControl",0x00010001,1
+HKLM,"SYSTEM\CurrentControlSet\Services\virtblk","Group",0x00000000,"Boot Bus Extender"
+HKLM,"SYSTEM\CurrentControlSet\Services\virtblk","ImagePath",0x00000000,"system32\drivers\virtblk.sys"

@@ -400,6 +400,20 @@ __INTRIN_INLINE long long _InterlockedAdd64(volatile long long *Addend, long lon
 }
 #endif
 
+#if !HAS_BUILTIN(_InterlockedAdd64_nf)
+__INTRIN_INLINE long long _InterlockedAdd64_nf(volatile long long *Addend, long long Value)
+{
+    return __atomic_add_fetch(Addend, Value, __ATOMIC_RELAXED);
+}
+#endif
+
+#if !HAS_BUILTIN(__prefetch)
+__INTRIN_INLINE void __prefetch(const void *Address)
+{
+    __builtin_prefetch(Address);
+}
+#endif
+
 #if !HAS_BUILTIN(_InterlockedDecrement)
 __INTRIN_INLINE long _InterlockedDecrement(volatile long * const lpAddend)
 {

@@ -28,6 +28,16 @@ typedef struct _KFLOATING_SAVE
 extern NTKERNELAPI volatile KSYSTEM_TIME KeTickCount;
 
 FORCEINLINE
+ULONG
+KeGetCurrentProcessorIndex(VOID)
+{
+    extern NTKERNELAPI ULONG NTAPI KeGetCurrentProcessorNumberEx(
+        _Out_opt_ PPROCESSOR_NUMBER ProcNumber);
+    return KeGetCurrentProcessorNumberEx(NULL);
+}
+
+
+FORCEINLINE
 VOID
 YieldProcessor(
     VOID)

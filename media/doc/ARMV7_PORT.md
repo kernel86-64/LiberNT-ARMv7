@@ -1,14 +1,114 @@
 # ARMv7-A port
 
 The current milestone boots the real ARM32 kernel through EDK II and FreeLoader
-on QEMU `virt`, with a Cortex-A15, one CPU and 512 MiB of RAM. The kernel reaches
-`KiSystemStartup`, NVS initialization, native VirtIO/FAT disk access, SMSS boot
-environment initialization, Win32k loading and CSRSS server initialization.
-The `session` fixture stops at the SMSS boot-environment milestone; `csr`
-stops after the system-session CSRSS server initializes. Continuing creates
-Wininit and a second CSRSS; GDI then waits for a display adapter that the
-minimal image does not yet publish.
-This remains an NT 10.0 port in progress, not a complete operating-system boot.
+on QEMU `virt`, with a Cortex-A15, one CPU and 512 MiB of RAM. NVS, VirtIO/FAT/NTFS,
+SMSS, CSRSS, Winlogon and LSASS initialize. The `csr --input` fixture reaches
+the lock screen, moves the cursor, dismisses the lock screen with a key, and
+uses a mouse click and keyboard input to enter a masked password character.
+The `csr --login` fixture additionally provisions the ordinary local account
+`tester` (password `armv7`), verifies wrong-password rejection, logs in through
+Winlogon, and checks the user identity, profile registry write access, Explorer
+desktop and taskbar. A second boot of the same image passes without provisioning
+again. These fixtures remain minimal test installations.
+
+The standard `liberntimg` target also builds the full native ARM32 installation,
+using the ordinary preinstall manifest, services, applications, fonts and theme
+resources. Its 1.5 GiB `LiberNT.img` has a 64 MiB EFI System Partition and an
+NTFS system partition containing `C:\Windows`. It completes `setup -mini`,
+automatically logs on as Administrator with a blank password, and reaches the
+LiberNT desktop. The application smoke test passes for winver, system
+properties, Notepad, Calculator, Registry Editor and Task Manager, together
+with the active Aero theme, native winprint environment, user APC wait, NLS
+conversion and relocated kernel32 KnownDLL. A cold boot retains the profile.
+The prepared image is powered off through `shutdown -s -t 0` after validation.
+
+Build and observe the full image with no QEMU process holding it open:
+
+```sh
+CCACHE_DISABLE=1 ninja -C output-Clang-arm-debug liberntimg -j8
+python3 -B scripts/test-arm-uefi.py --stage csr \
+    --installed-image output-Clang-arm-debug/LiberNT.img
+```
+
+To open the prepared image interactively after stopping the test guest:
+
+```sh
+qemu-system-arm -machine virt -cpu cortex-a15 -m 512 -smp 1 \
+    -drive if=pflash,format=raw,readonly=on,file=/usr/share/qemu/edk2-arm-code.fd \
+    -drive if=pflash,format=raw,file=output-Clang-arm-debug/QEMU_VARS.fd \
+    -drive if=none,format=raw,id=os,file=output-Clang-arm-debug/LiberNT.img \
+    -device virtio-blk-device,drive=os -device ramfb \
+    -global virtio-mmio.force-legacy=false \
+    -device virtio-keyboard-device -device virtio-tablet-device \
+    -nic none -serial stdio -monitor none
+```
+
+The installed-image mode boots the image in place without repacking it and
+pauses after 30 seconds. Its `csr: PASS` reports CSRSS, LSASS and Winlogon
+initialization, not desktop readiness. Initial setup needs additional bounded
+execution intervals. `arm_account_setup.exe --desktop-smoke` checks the theme,
+native print processor, user APC delivery and mapping, and visible windows for
+winver, system properties, Notepad, Calculator, Registry Editor and Task Manager.
+
+NTFS create processing now uses a temporary expanded kernel stack through
+`KeExpandKernelStackAndCalloutEx`. The normal ARM32 stack remains 12 KiB; the
+callout uses the existing large-stack allocation and restores the thread and
+processor stack metadata before releasing it. The full NTFS boot previously
+overflowed the stack while recursively loading drivers. EFI checks exercise
+callout bounds, allocation failure, validation and metadata restoration.
+The contract comes from Microsoft's
+[KeExpandKernelStackAndCalloutEx documentation](https://learn.microsoft.com/en-us/windows-hardware/drivers/ddi/ntddk/nf-ntddk-keexpandkernelstackandcalloutex).
+
+The loader permits relocatable KnownDLL images to move when their preferred
+bases collide. It retains the PE relocation checks. The removed special case
+rejected kernel32 and user32 outright; ARM requires ASLR support under the
+documented [/DYNAMICBASE contract](https://learn.microsoft.com/en-us/cpp/build/reference/dynamicbase).
+No Windows 11 runtime baseline is available for this shared loader change.
+
+ARM exception return delivers a pending user APC before restoring user state.
+Without this, setup's service notification left `UserApcPending` set and a later
+RPC pipe wait returned `WAIT_IO_COMPLETION` without completed input. EFI checks
+cover user/kernel return selection and APC-level delivery; normal setup now
+passes that RPC failure. Microsoft's
+[QueueUserAPC contract](https://learn.microsoft.com/en-us/windows/win32/api/processthreadsapi/nf-processthreadsapi-queueuserapc)
+defines callback execution before the alertable wait returns.
+
+The ARM architecture descriptor reserves the first 64 KiB of user addresses,
+consistent with the existing NT minimum-address consumers and other ports.
+Previously a zero-address NLS mapping was mistaken for an absent table by the
+loader and corrupted imported DLL names. The native ARM descriptor regression
+failed before the fix and passes 50,325 checks after it.
+
+The virt HAL rearms the timer after accounting for elapsed time. If interrupt
+processing has already passed the next comparison, the hardware comparison is
+placed one requested period ahead of the current counter; the accounting
+deadline is retained so the next interrupt includes every elapsed period.
+Programming an already overdue comparison left the clock and the dispatch SGI
+pending together and starved ready threads at a 1 ms resolution. Disabling only
+the clock interrupt in the live debugger immediately admitted the pending
+dispatch interrupt. The updated image boots past that state; the desktop smoke
+test requests 1 ms resolution and verifies that two CPU-bound threads both run
+while the caller sleeps and wakes. Timer comparison behavior is specified in
+chapter B8 of the [Armv7-A/R Architecture Reference Manual](https://documentation-service.arm.com/static/5f8daeb7f86e16515cdb8c4e).
+
+The native print environment is `Windows ARM`, with `ARM` as its spool directory,
+as specified by [MS-RPRN](https://learn.microsoft.com/en-us/openspecs/windows_protocols/ms-rprn/e81cbc09-ab05-4a32-ae4a-8ec57b436c43).
+Its hive entries and winprint packaging now agree. Legacy HAL DMA adapters and
+MSI remain unsupported on this platform; the VirtIO drivers use their existing
+DMA and interrupt paths.
+
+`GetFinalPathNameByHandleW` derives the volume device prefix from the file path
+suffix when it matches the object name. Taking the first component after
+`\Device\` truncated VirtIO's nested `Harddisk0\Partition2` device name and
+made the mount-manager query fail with `STATUS_OBJECT_TYPE_MISMATCH`.
+The `arm_account_setup.exe --verify-path` regression checks the documented
+[DOS path contract](https://learn.microsoft.com/en-us/windows/win32/api/fileapi/nf-fileapi-getfinalpathnamebyhandlew)
+against the executable's module path; it failed before the change and passes
+after it. Both kernel32 and kernel32_vista are rebuilt. Cross-target
+syntax checks pass for amd64, i386, ARM64 and RISC-V64. No Windows 11 runtime
+baseline was available. Cppcheck with the ARM compile database stops parsing
+the existing `crtdefs.h` `errno_t` declaration, so it provides no clean analysis
+result for these ARM C translation units.
 
 ## Build and boot tests
 
@@ -43,7 +143,9 @@ supports these boot stages:
   R4–R11, D8–D15 and FPSCR preservation, explicit establisher-frame capture,
   portable `floor`, `pow`, `log10` and trigonometric functions, and 32/64-bit
   interlocked-add results. It also checks the `setjmp.h` then `setjmpex.h`
-  include order and frame capture through the extended macro.
+  include order and frame capture through the extended macro. ARM scalar
+  `memcpy`, `memmove` and `memset` tests cover lengths 0–128, all byte alignments,
+  overlapping moves, return pointers, fill truncation and unchanged boundary bytes.
   Build-time checks pin the ARM32 SDK unwind-table sizes, offsets and context
   flags. Virtual unwind tests cover packed and full metadata, partial prologues
   and epilogues, conditional epilogues, VFP saves, nonvolatile context pointers,
@@ -492,6 +594,123 @@ Do not enable WoW64/FEX for a 32-bit host. ARM64EC/CHPE and ARM64 structure
 layouts are not a substitute for ARM32 ABI evidence. Audit pointer truncation,
 page-table geometry and explicit memory ordering in shared code as each
 subsystem becomes executable.
+
+## VirtIO keyboard and pointer
+
+Build and run the input integration test with:
+
+```sh
+python3 -B scripts/test-arm-uefi.py --stage csr --input
+```
+
+`--input` selects modern VirtIO MMIO, adds `virtio-keyboard-device` and
+`virtio-tablet-device`, and includes the HID/class drivers and their existing
+keyboard/mouse INF configurations. The headless QMP test runs for 30 seconds;
+it checks cursor movement outside the clock region, lock-screen dismissal by
+Space, and a click followed by typing in the password field. Its final capture
+is `output-Clang-arm-debug/arm-screen.ppm`. Like the other observation stages,
+it leaves the guest stopped for inspection; release that guest before starting
+another VM or rebuilding the image.
+
+For an interactive QEMU run using the prepared image, include these options
+alongside the existing firmware, disk and `ramfb` options:
+
+```sh
+-global virtio-mmio.force-legacy=false \
+-device virtio-keyboard-device -device virtio-tablet-device
+```
+
+The dedicated `virtinput` HID minidriver translates VirtIO evdev events to HID
+reports; existing `kbdhid`, `mouhid`, `kbdclass` and `mouclass` deliver input to
+Win32k. Event and LED status queues use contiguous noncached DMA memory, split
+rings, explicit publication barriers and GIC interrupts. Platform discovery
+currently scans the QEMU virt MMIO slots in the driver's platform file; firmware
+resource enumeration and real boards remain outside this milestone. IRQ routing
+is restricted to CPU 0, matching the current HAL; SMP input routing, suspend and
+hot removal have not been validated.
+
+The ARM interrupt connection implementation now installs, shares, synchronizes
+and removes device ISRs. The EFI fixture covers those operations and failure
+rollback, along with evdev-to-HID report boundaries, modifiers, key rollover,
+relative motion splitting and absolute coordinate scaling. The QEMU input run
+separately exercises the real GIC, ISR and DPC path.
+
+Two existing obstacles also blocked this path. HID collection enumeration
+previously required optional hardware IDs from the parent root PDO, preventing
+HID keyboard/mouse IDs from being generated. It now derives the collection IDs
+when the parent returns `STATUS_NOT_SUPPORTED`, while preserving other errors.
+The ARM Clang keyboard-layout link previously merged code into data; LLD then
+set Thumb bits on data addresses. Keeping ARM code and data sections separate
+restores aligned layout pointers and working scan-code translation. The QMP
+keyboard check catches the resulting dropped-key regression.
+
+Protocol definitions come from the
+[VirtIO 1.2 input specification](https://docs.oasis-open.org/virtio/virtio/v1.2/virtio-v1.2.html),
+[USB HID specification and usage tables](https://www.usb.org/hid),
+[Microsoft HID minidriver registration](https://learn.microsoft.com/en-us/windows-hardware/drivers/ddi/hidport/nf-hidport-hidregisterminidriver),
+[read-report contract](https://learn.microsoft.com/en-us/windows-hardware/drivers/ddi/hidport/ni-hidport-ioctl_hid_read_report),
+[HID collection hardware IDs](https://learn.microsoft.com/en-us/windows-hardware/drivers/hid/hidclass-hardware-ids-for-top-level-collections)
+and the [published keyboard-layout samples](https://github.com/microsoft/Windows-driver-samples/tree/main/input/layout).
+QEMU's published `hw/arm/virt.c` and `hw/input/virtio-input*.c` describe the
+platform slots and advertised event capabilities. Existing ARM32 `KINTERRUPT`
+fields are LiberNT scaffolding; no Windows ARM64 structure offsets are used.
+The common HID change passes amd64, ARM64 and RISC-V64 syntax compilation.
+Windows 11 runtime comparison and real hardware validation were not performed.
+C static analysis remains blocked by the existing `crtdefs.h` `errno_t` parser
+error, so this milestone does not claim a clean cppcheck result.
+
+## Local account and desktop fixture
+
+```sh
+python3 -B scripts/test-arm-uefi.py --stage csr --login
+# Quit the stopped QEMU guest before the next command.
+python3 -B scripts/test-arm-uefi.py --stage csr --login --reuse-image
+```
+
+The second command preserves the image and firmware variables. Both runs use
+modern VirtIO input, the same disk and bounded headless QEMU execution. After
+shutting down the test guest, boot `arm-uefi-tests.img` normally, dismiss the
+lock screen, select `tester`, and enter `armv7`. The harness leaves its guest
+paused on the GDB port; shut it down before manually opening the image.
+
+The fixture supplies SAM/SECURITY/DEFAULT hives, a default profile, US locale,
+RpcSs, shell COM registrations from the existing setup generator, dynamically
+loaded shell DLLs and neutral `.mun` resources. It uses the normal setup,
+authentication, profile and Userinit paths. The session verifier runs with the
+user token alongside Userinit and requires both `Progman` and `Shell_TrayWnd`.
+The test password is deliberately public and belongs only to this fixture.
+
+Profile provisioning now resets inherited permissions throughout the newly
+created user hive, retaining explicit ACEs. Updating only the root with
+`RegSetKeySecurity` left existing protected template keys inaccessible to the
+new user. The operation uses Microsoft's documented
+[TreeResetNamedSecurityInfoW](https://learn.microsoft.com/en-us/windows/win32/api/aclapi/nf-aclapi-treeresetnamedsecurityinfow)
+contract, with `KeepExplicit=TRUE`; the ordinary user's registry write check
+failed before the fix and passes after it. No Windows 11 runtime baseline was
+available for this shared profile change.
+
+Account creation and logon use the documented
+[NetUserAdd](https://learn.microsoft.com/en-us/windows/win32/api/lmaccess/nf-lmaccess-netuseradd),
+[LsaAddAccountRights](https://learn.microsoft.com/en-us/windows/win32/api/ntsecapi/nf-ntsecapi-lsaaddaccountrights)
+and [LogonUserW](https://learn.microsoft.com/en-us/windows/win32/api/winbase/nf-winbase-logonuserw)
+interfaces. The account receives interactive logon permission. Everyone receives
+the standard traverse privilege, consistent with the existing `defltwk.inf` and
+Microsoft's [traverse privilege documentation](https://learn.microsoft.com/en-us/windows-hardware/drivers/ifs/checking-for-traverse-privilege-on-irp-mj-create).
+The account remains a normal user.
+
+The CRT `_onexit` export is a Thumb function. `spec2def -import-data` keeps the
+import library pointer-only while emitting a function export in the provider,
+so the linker preserves its Thumb bit. Exporting it as DLL data had entered
+ARM state when Explorer called it. The linked-PE regression checks the actual
+ARM export bit, IAT import and coexistence with the consumer's local wrapper;
+it also checks import/export definitions for i386, amd64 and ARM64.
+
+Scalar ARM memory primitives leave VFP state untouched and use aligned word
+accesses. They replace the unoptimized byte-at-a-time C routines in the ARM
+runtime. With the old routines, a 1 ms clock period starved startup while
+constructing interrupt frames; the new routines reach account setup in about
+four guest seconds without changing the timer period. EFI memory and exception
+regressions pass with the production routines linked in.
 
 ## Windows RT reference
 
