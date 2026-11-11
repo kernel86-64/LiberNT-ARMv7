@@ -93,7 +93,7 @@ KeDisableInterrupts(VOID)
     //
     // Return previous interrupt state
     //
-    return Flags.IrqDisable;
+    return !Flags.IrqDisable;
 }
 
 FORCEINLINE
@@ -371,14 +371,7 @@ KiArmTakeTimer(PKPRCB Prcb)
 FORCEINLINE ULONG64
 ReadTimeStampCounter(VOID)
 {
-    #if defined(__clang__) || defined(__GNUC__)
-    ULONG Low, High;
-    __asm__ __volatile__("isb\n\tmrrc p15, 1, %0, %1, c14" : "=r"(Low), "=r"(High) :: "memory");
-    return ((ULONG64)High << 32) | Low;
-    #else
-    __isb(0xf);
-    return _MoveFromCoprocessor64(15, 1, 14);
-    #endif
+    return (ULONG64)KeQueryPerformanceCounter(NULL).QuadPart;
 }
 
 DECLSPEC_NORETURN VOID

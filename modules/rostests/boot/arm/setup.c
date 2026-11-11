@@ -228,12 +228,35 @@ static int DesktopSmoke(VOID)
     return 0;
 }
 
-static int VerifySession(VOID)
+static BOOL WaitForInterfaceWindow(PCWSTR Class, PCSTR Marker)
+{
+    ULONG Attempt;
+    HWND Window;
+    DWORD_PTR Reply;
+
+    for (Attempt = 0; Attempt < 300; ++Attempt)
+    {
+        Window = FindWindowW(Class, NULL);
+        if (Window && IsWindowVisible(Window) &&
+            SendMessageTimeoutW(Window, WM_NULL, 0, 0, SMTO_ABORTIFHUNG, 1000, &Reply))
+        {
+            DbgPrint("ARM UI: %s responsive\n", Marker);
+            return TRUE;
+        }
+        Sleep(100);
+    }
+    DbgPrint("ARM UI: %s missing or unresponsive\n", Marker);
+    return FALSE;
+}
+
+static int VerifySession(BOOL Interface)
 {
     WCHAR Name[256], Profile[MAX_PATH];
     DWORD Length = ARRAYSIZE(Name);
     ULONG Attempt;
     HKEY Probe;
+    HWND Desktop, Tray;
+    DWORD_PTR Reply;
     LONG Error;
     if (!GetUserNameW(Name, &Length) || wcscmp(Name, L"tester"))
     {
@@ -255,11 +278,18 @@ static int VerifySession(VOID)
     }
     RegCloseKey(Probe);
     DbgPrint("ARM user session: user and profile registry verified\n");
-    for (Attempt = 0; Attempt < 60; ++Attempt)
+    for (Attempt = 0; Attempt < 300; ++Attempt)
     {
-        if (FindWindowW(L"Shell_TrayWnd", NULL) && FindWindowW(L"Progman", NULL))
+        Tray = FindWindowW(L"Shell_TrayWnd", NULL);
+        Desktop = FindWindowW(L"Progman", NULL);
+        if (Tray && Desktop && IsWindowVisible(Tray) && IsWindowVisible(Desktop) &&
+            SendMessageTimeoutW(Tray, WM_NULL, 0, 0, SMTO_ABORTIFHUNG, 1000, &Reply) &&
+            SendMessageTimeoutW(Desktop, WM_NULL, 0, 0, SMTO_ABORTIFHUNG, 1000, &Reply))
         {
             DbgPrint("ARM user session: PASS (tester, profile, Explorer desktop and taskbar)\n");
+            if (Interface && (!WaitForInterfaceWindow(L"StartMenu2", "Start menu") ||
+                              !WaitForInterfaceWindow(L"CabinetWClass", "Explorer window")))
+                return 1;
             return 0;
         }
         Sleep(100);
@@ -290,7 +320,8 @@ int WINAPI wWinMain(HINSTANCE Instance, HINSTANCE Previous, LPWSTR Command, int 
     UNREFERENCED_PARAMETER(Previous);
     if (!wcscmp(Command, L"--desktop-smoke")) return DesktopSmoke();
     if (!wcscmp(Command, L"--verify-path")) return VerifyFinalPath() ? 0 : 1;
-    if (!wcscmp(Command, L"--verify-session")) return VerifySession();
+    if (!wcscmp(Command, L"--verify-session")) return VerifySession(FALSE);
+    if (!wcscmp(Command, L"--verify-interface")) return VerifySession(TRUE);
     UNREFERENCED_PARAMETER(Show);
 
     DbgPrint("ARM account setup: starting\n");

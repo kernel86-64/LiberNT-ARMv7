@@ -10,6 +10,17 @@
 C_ASSERT(IMAGE_FILE_MACHINE_NATIVE == 0x01C4);
 
 static KPRCB Prcb;
+static ULONGLONG CounterValue;
+
+static LARGE_INTEGER NTAPI ArmTestCounter(PLARGE_INTEGER Frequency)
+{
+    LARGE_INTEGER Value;
+    if (Frequency) Frequency->QuadPart = 24000000;
+    Value.QuadPart = ++CounterValue;
+    return Value;
+}
+
+PVOID __imp_KeQueryPerformanceCounter = ArmTestCounter;
 
 BOOLEAN ArmTestKernelFaultDecoding(void)
 {

@@ -163,7 +163,8 @@ MempSetupPagingForRegion(
 
     if (!Status)
     {
-        ERR("Error during MempSetupPaging\n");
+        ERR("MempSetupPaging failed: base=%lx pages=%lx type=%lu\n",
+            BasePage, PageCount, Type);
     }
     return Status;
 }

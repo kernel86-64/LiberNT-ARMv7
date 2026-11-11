@@ -5,6 +5,7 @@ include_directories(
 list(APPEND SOURCE
     sdbus.c
     hardware.c
+    exynos.c
     fdo.c
     pdo.c
     enum.c

@@ -78,7 +78,7 @@ def open_device(lib):
     return None
 
 
-def capture(build):
+def capture(build, complete=COMPLETE):
     lib = usb_library()
     with (build / '.arm-qemu.lock').open('a') as lock:
         try:
@@ -117,11 +117,11 @@ def capture(build):
                         output.write(data)
                         sys.stdout.buffer.write(data)
                         sys.stdout.buffer.flush()
-                        received = (received + data)[-len(COMPLETE) - len(buffer):]
+                        received = (received + data)[-len(complete) - len(buffer):]
                     if result not in (0, -7):
                         raise RuntimeError(f'UsbLogDxe stream ended: libusb status {result}')
-                    if COMPLETE in received:
-                        print('\nEFI platform inventory received; kernel startup was not tested.', file=sys.stderr)
+                    if complete in received:
+                        print('\nFirmware capture complete; kernel startup was not tested.', file=sys.stderr)
                         return
         finally:
             if device:
@@ -134,9 +134,12 @@ def capture(build):
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--build-dir', type=Path, default=ROOT / 'output-Clang-arm-debug')
+    parser.add_argument('--until', default=COMPLETE.decode(), help='stop after this text appears in the log')
     args = parser.parse_args()
+    if not args.until:
+        parser.error('--until must not be empty')
     try:
-        capture(args.build_dir.resolve())
+        capture(args.build_dir.resolve(), args.until.encode())
     except KeyboardInterrupt:
         parser.exit(130, '\nStopped.\n')
     except (OSError, RuntimeError) as error:

@@ -347,12 +347,13 @@ MiPrepareDirectMap(VOID)
 
         if (Slot == NULL || !MiArchPteIsBlock(MiArchPteRead(Slot), 1))
             continue;
-        Parent = ParentFrame;
+        ULONG64 SlotPhysical = MiPtSlotAddressAtLevel(MiSystem.Arch, ParentFrame, VirtualAddress, 1);
+        Parent = SlotPhysical >> PAGE_SHIFT;
         Status = MiSystemMapFrames(&MiSystem, Alias, &Parent, 1, MI_PROT_READWRITE, 0, FALSE);
         if (!NT_SUCCESS(Status))
             break;
         Status = MiPtSplitBootBlock(Space, VirtualAddress,
-                                    (PMI_PTE)(ULONG_PTR)(Alias + ((ULONG_PTR)Slot & (PAGE_SIZE - 1))),
+                                    (PMI_PTE)(ULONG_PTR)(Alias + (SlotPhysical & (PAGE_SIZE - 1))),
                                     ParentFrame);
         MiSystemUnmap(&MiSystem, Alias, 1, FALSE);
         if (!NT_SUCCESS(Status))

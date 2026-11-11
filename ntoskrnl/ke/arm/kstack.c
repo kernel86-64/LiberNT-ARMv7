@@ -7,6 +7,17 @@
 
 #include <ntoskrnl/include/ntoskrnl.h>
 
+NTSTATUS KiArmGrowKernelFaultStack(ULONG_PTR StackPointer)
+{
+    PKTHREAD Thread = KeGetCurrentThread();
+
+    if (!Thread->LargeStack || KeGetCurrentIrql() > APC_LEVEL ||
+        StackPointer < Thread->StackLimit || StackPointer > (ULONG_PTR)Thread->StackBase ||
+        StackPointer - Thread->StackLimit >= KERNEL_STACK_SIZE)
+        return STATUS_SUCCESS;
+    return MmGrowKernelStack((PVOID)StackPointer);
+}
+
 static BOOLEAN KiArmInStack(ULONG_PTR Address, SIZE_T Length, ULONG_PTR Low, ULONG_PTR High)
 {
     return Address >= Low && Address <= High && Length <= High - Address;

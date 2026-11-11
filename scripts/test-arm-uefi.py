@@ -25,7 +25,7 @@ def run(*args, **kwargs):
     subprocess.run([str(arg) for arg in args], check=True, **kwargs)
 
 
-def session_modules(build, env, no_build, startup=False, login=False):
+def session_modules(build, env, no_build, startup=False, login=False, extra_modules=()):
     targets = subprocess.check_output(['ninja', '-C', str(build), '-t', 'targets', 'all'], text=True)
     modules = {}
     for line in targets.splitlines():
@@ -34,6 +34,7 @@ def session_modules(build, env, no_build, startup=False, login=False):
             modules.setdefault(Path(path).name.lower(), []).append(path)
     modules['comctl32.dll'] = ['dll/win32/comctl32/comctl32.dll']
     pending = {'csrsrv.dll', 'basesrv.dll', 'winsrv.dll', 'wininit.exe'}
+    pending.update(extra_modules)
     if startup:
         pending.update(['winlogon.exe', 'services.exe', 'lsass.exe', 'msgina.dll',
                         'kbdus.dll', 'cdd.dll', 'msv1_0.dll'])
@@ -224,10 +225,10 @@ def clock_snapshot(qmp):
     raise RuntimeError('could not read the ARM shared clock counters')
 
 
-def boot(build, firmware, stage, lock, modern=False, modules=(), observe=False, input_devices=False, login=False, reuse=False, installed=None, shell=None):
+def boot(build, firmware, stage, lock, modern=False, modules=(), observe=False, input_devices=False, login=False, reuse=False, installed=None, shell=None, pagefile=False, prepare_only=False):
     image = installed if installed else build / 'arm-uefi-tests.img'
     reuse = reuse or installed is not None
-    transient_variables = stage in ['probe', 'abi', 'loader', 'kernel', 'clock', 'storage']
+    transient_variables = prepare_only or stage in ['perf', 'probe', 'abi', 'loader', 'kernel', 'clock', 'storage', 'user', 'session']
     variables = firmware.with_name('edk2-arm-vars.fd') if transient_variables else build / 'QEMU_VARS.fd'
     log = build / 'arm-boot.log'
     qmp = build / 'arm-qemu.qmp'
@@ -237,18 +238,19 @@ def boot(build, firmware, stage, lock, modern=False, modules=(), observe=False, 
         if not image.is_file() or not variables.is_file():
             raise RuntimeError('the reusable ARM image and firmware variables are missing')
     else:
-        application = {'abi': 'arm_uefi_test', 'probe': 'arm_platform_probe'}.get(stage, 'uefildr')
+        application = {'abi': 'arm_uefi_test', 'probe': 'arm_platform_probe', 'perf': 'arm_firmware_perf'}.get(stage, 'uefildr')
         binary = build / 'boot/freeldr/freeldr' / (application + '.efi')
         if not transient_variables:
             shutil.copyfile(firmware.with_name('edk2-arm-vars.fd'), variables)
+        image_mib = 512 if pagefile else 128
         with image.open('wb') as output:
-            output.truncate(128 * 1024 * 1024)
+            output.truncate(image_mib * 1024 * 1024)
         fat_image = image
         if stage in ['storage', 'user', 'session', 'csr']:
             mbr = bytearray(512)
             struct.pack_into('<I', mbr, 440, 0x4C4E5441)
             struct.pack_into('<BBBBBBBBII', mbr, 446, 0x80, 0xFE, 0xFF, 0xFF,
-                             0x0C, 0xFE, 0xFF, 0xFF, 2048, 128 * 2048 - 2048)
+                             0x0C, 0xFE, 0xFF, 0xFF, 2048, image_mib * 2048 - 2048)
             mbr[510:512] = b'\x55\xaa'
             with image.open('r+b') as output:
                 output.write(mbr)
@@ -283,6 +285,7 @@ def boot(build, firmware, stage, lock, modern=False, modules=(), observe=False, 
                 run(build / 'host-tools/bin/mkdrvdb', 'arm', payload / 'input-drivers.inf', inf_list)
             run(build / 'host-tools/bin/mkhive', '-h:SYSTEM,SOFTWARE,SAM,SECURITY,DEFAULT' if login else ('-h:SYSTEM,SOFTWARE' if stage == 'csr' else '-h:SYSTEM'), f'-d:{payload}',
                 ROOT / 'modules/rostests/boot/arm/system.inf',
+                *([ROOT / 'modules/rostests/boot/arm/pagefile.inf'] if pagefile else []),
                 *([ROOT / 'modules/rostests/boot/arm/storage.inf',
                    ROOT / 'modules/rostests/boot/arm/session.inf'] if stage in ['storage', 'user', 'session', 'csr'] else []),
                 *([ROOT / 'drivers/directx/dxgkrnl/wddm_reg.inf',
@@ -368,6 +371,8 @@ def boot(build, firmware, stage, lock, modern=False, modules=(), observe=False, 
                            'drivers/input/kbdclass/kbdclass.sys', 'drivers/input/mouclass/mouclass.sys']:
                 run('mcopy', '-i', fat_image, build / source,
                     '::/reactos/system32/drivers/' + Path(source).name)
+    if prepare_only:
+        return
     command = [
         'qemu-system-arm', '-machine', 'virt', '-cpu', 'cortex-a15',
         '-m', '512', '-smp', '1', '-display', 'none', '-monitor', 'none',
@@ -409,7 +414,7 @@ def boot(build, firmware, stage, lock, modern=False, modules=(), observe=False, 
                     raise RuntimeError(
                         f'{stage}: guest stopped for debugging (PID {process.pid}); '
                         f'gdb target remote 127.0.0.1:1234; log: {log}')
-                if stage == 'probe' and 'ARM platform probe: COMPLETE' in text:
+                if stage in ['probe', 'perf'] and ('ARM platform probe: COMPLETE' if stage == 'probe' else 'Firmware performance: COMPLETE') in text:
                     if probe_completed is None:
                         probe_completed = now
                     elif now - probe_completed >= 1:
@@ -475,7 +480,7 @@ def boot(build, firmware, stage, lock, modern=False, modules=(), observe=False, 
                         stop_guest(qmp)
                         keep = True
                         break
-                    if stage in ['probe', 'abi', 'kernel', 'clock', 'storage', 'user', 'session', 'csr'] and 'ARMv7 ABI tests: PASS' not in text:
+                    if stage in ['perf', 'probe', 'abi', 'kernel', 'clock', 'storage', 'user', 'session', 'csr'] and 'ARMv7 ABI tests: PASS' not in text:
                         stop_guest(qmp)
                         keep = True
                         raise RuntimeError(
@@ -490,6 +495,13 @@ def boot(build, firmware, stage, lock, modern=False, modules=(), observe=False, 
                     'ARM platform probe: COMPLETE']) and 'ARM platform probe: FAIL' not in text
                 returned = 'Shell>' if shell else 'BdsDxe:'
                 passed = passed and returned in text.split('ARM platform probe: COMPLETE')[-1]
+            elif stage == 'perf':
+                measurements = re.findall(r'PERF (\w+) us=(\d+) status=([0-9a-fA-F]+)', text)
+                values = {name: (int(duration), int(status, 16)) for name, duration, status in measurements}
+                passed = all(name in values and values[name][1] == 0 for name in
+                             ['Stall100ms', 'RAMcopy4MiB', 'GOPrestore', 'GOPread'])
+                passed = passed and values.get('Stall100ms', (0, 0))[0] >= 100000
+                passed = passed and 'Firmware performance: COMPLETE' in text
             elif stage == 'abi':
                 passed = 'ARMv7 ABI tests: PASS' in text and 'tests: FAIL' not in text
             elif stage in ['kernel', 'clock', 'storage', 'user', 'session', 'csr']:
@@ -510,6 +522,8 @@ def boot(build, firmware, stage, lock, modern=False, modules=(), observe=False, 
                             'WINLOGON: Session initialized', 'LSASS: Security services initialized'])
                 if stage == 'session':
                     passed = passed and 'SMSS: Boot environment initialized' in text
+                    if pagefile:
+                        passed = passed and 'Paging file \\??\\C:\\pagefile.sys created, 16 MB, maximum 32 MB' in text
                 if stage == 'user':
                     passed = passed and 'NtProcessStartup(' in text and ') called' in text
                 if stage == 'clock':
@@ -533,6 +547,11 @@ def boot(build, firmware, stage, lock, modern=False, modules=(), observe=False, 
                     process.kill()
                     process.wait()
     result = {'stage': stage, 'passed': True, 'seconds': round(time.monotonic() - started, 2)}
+    if pagefile:
+        result['paging_file_created'] = True
+    if stage == 'perf':
+        result['milestone'] = 'firmware-service-timings; no kernel startup'
+        result['microseconds'] = {name: duration for name, (duration, status) in values.items()}
     if stage == 'probe':
         result['milestone'] = 'firmware-platform-inventory; no kernel startup'
         result['shell_autostart'] = shell is not None
@@ -559,8 +578,9 @@ def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--build-dir', type=Path, default=ROOT / 'output-Clang-arm-debug')
     parser.add_argument('--firmware', type=Path, default=Path('/usr/share/qemu/edk2-arm-code.fd'))
-    parser.add_argument('--stage', choices=['probe', 'abi', 'loader', 'kernel', 'clock', 'storage', 'user', 'session', 'csr', 'both'], default='both')
+    parser.add_argument('--stage', choices=['perf', 'probe', 'abi', 'loader', 'kernel', 'clock', 'storage', 'user', 'session', 'csr', 'both'], default='both')
     parser.add_argument('--no-build', action='store_true')
+    parser.add_argument('--pagefile', action='store_true', help='require creation of a 16 MiB paging file before the session milestone')
     parser.add_argument('--shell', type=Path, help='test probe autostart through an existing ARM UEFI Shell binary')
     parser.add_argument('--virtio-modern', action='store_true')
     parser.add_argument('--observe', action='store_true')
@@ -569,6 +589,8 @@ def main():
     parser.add_argument('--login', action='store_true', help='provision and test the local tester account')
     parser.add_argument('--input', action='store_true', help='enable the VirtIO keyboard and tablet')
     args = parser.parse_args()
+    if args.pagefile and args.stage != 'session':
+        parser.error('--pagefile requires --stage session')
     if args.shell:
         if args.stage != 'probe':
             parser.error('--shell requires --stage probe')
@@ -604,7 +626,7 @@ def main():
         env = dict(os.environ, CCACHE_DISABLE='1')
         modules = []
         if not args.no_build:
-            targets = ['arm_platform_probe'] if args.stage == 'probe' else ['uefildr', 'arm_uefi_test']
+            targets = {'probe': ['arm_platform_probe'], 'perf': ['arm_firmware_perf']}.get(args.stage, ['uefildr', 'arm_uefi_test'])
             run('ninja', '-C', build, *targets, '-j8', env=env)
             if args.stage in ['storage', 'user', 'session', 'csr']:
                 run('ninja', '-C', build, 'virtblk', 'mountmgr', 'fastfat', 'arm_storage_test', 'ntdll', 'smss', 'autochk', 'csrss', 'win32k', 'ftfd', 'hidparse', 'csrsrv', '-j8', env=env)
@@ -627,7 +649,7 @@ def main():
         try:
             for stage in stages:
                 try:
-                    result = boot(build, args.firmware.resolve(), stage, lock, args.virtio_modern, modules, args.observe, args.input, args.login, args.reuse_image, args.installed_image, args.shell)
+                    result = boot(build, args.firmware.resolve(), stage, lock, args.virtio_modern, modules, args.observe, args.input, args.login, args.reuse_image, args.installed_image, args.shell, args.pagefile)
                 except Exception as error:
                     results.append({'stage': stage, 'passed': False, 'error': str(error)})
                     raise

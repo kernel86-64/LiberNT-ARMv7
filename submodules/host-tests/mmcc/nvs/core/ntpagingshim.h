@@ -102,3 +102,8 @@ VOID ExQueueWorkItem(PWORK_QUEUE_ITEM Work, ULONG Queue);
     (Irp)->Completion = (Function); (Irp)->Context = (Argument); } while (0)
 NTSTATUS MiControlReadAsync(PVOID Context, ULONG64 Offset, ULONG Frame, PVOID Buffer,
                             MI_READ_COMPLETION Completion, PVOID CompletionContext);
+
+#define KERNEL_STACK_SIZE (3 * PAGE_SIZE)
+typedef VOID (NTAPI *PEXPAND_STACK_CALLOUT)(PVOID Parameter);
+NTSTATUS KeExpandKernelStackAndCalloutEx(PEXPAND_STACK_CALLOUT Callout, PVOID Parameter,
+                                         SIZE_T Size, BOOLEAN Wait, PVOID Context);

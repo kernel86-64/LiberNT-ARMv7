@@ -51,6 +51,7 @@ elseif(ARCH STREQUAL "amd64")
 elseif(ARCH STREQUAL "arm")
     list(APPEND UEFILDR_ARC_SOURCE
         arch/arm/debug.c
+        arch/arm/shortdesc.c
         arch/uefi/uefiserial.c
         arch/uefi/arm/runtime.c)
     list(APPEND UEFILDR_COMMON_ASM_SOURCE
@@ -294,8 +295,13 @@ endif()
 if(ARCH STREQUAL "arm" AND CMAKE_C_COMPILER_ID STREQUAL "Clang")
     add_library(arm_abi_layout OBJECT ${REACTOS_SOURCE_DIR}/modules/rostests/boot/arm/layout.c)
     add_dependencies(arm_abi_layout psdk)
+    set_source_files_properties(${REACTOS_SOURCE_DIR}/modules/rostests/boot/arm/exynos-cache.c
+        PROPERTIES COMPILE_OPTIONS "-U_BLDR_;-U_NTHAL_;-U_NTSYSTEM_"
+        INCLUDE_DIRECTORIES "${REACTOS_SOURCE_DIR}/hal/halarm/include;${REACTOS_SOURCE_DIR}/hal/arch/common/include;${REACTOS_SOURCE_DIR}/ntoskrnl/include")
     add_executable(arm_uefi_test
         ${REACTOS_SOURCE_DIR}/modules/rostests/boot/arm/abi.c
+        ${REACTOS_SOURCE_DIR}/modules/rostests/boot/arm/exynosboot.c
+        ${REACTOS_SOURCE_DIR}/modules/rostests/boot/arm/exynos-cache.c
         ${REACTOS_SOURCE_DIR}/modules/rostests/boot/arm/reloc.c
         ${REACTOS_SOURCE_DIR}/modules/rostests/boot/arm/debugsvc.c
         ${REACTOS_SOURCE_DIR}/modules/rostests/boot/arm/syscall.c
@@ -380,6 +386,11 @@ if(ARCH STREQUAL "arm" AND CMAKE_C_COMPILER_ID STREQUAL "Clang")
 endif()
 
 if(ARCH STREQUAL "arm" AND SARCH STREQUAL "virt")
+    add_library(arm_n7000_test MODULE ${REACTOS_SOURCE_DIR}/modules/rostests/boot/arm/n7000_test.c)
+    set_source_files_properties(${REACTOS_SOURCE_DIR}/modules/rostests/boot/arm/n7000_test.c
+        PROPERTIES COMPILE_OPTIONS "-U_BLDR_;-U_NTHAL_;-U_NTSYSTEM_")
+    set_module_type(arm_n7000_test kernelmodedriver)
+    add_importlibs(arm_n7000_test ntoskrnl hal)
     add_library(arm_storage_test MODULE ${REACTOS_SOURCE_DIR}/modules/rostests/boot/arm/storage_test.c)
     set_source_files_properties(${REACTOS_SOURCE_DIR}/modules/rostests/boot/arm/storage_test.c
         PROPERTIES COMPILE_OPTIONS "-U_BLDR_;-U_NTHAL_")
@@ -404,25 +415,53 @@ if(ARCH STREQUAL "arm" AND CMAKE_C_COMPILER_ID STREQUAL "Clang")
         VERBATIM)
     set_property(TARGET arm_platform_probe APPEND PROPERTY LINK_DEPENDS ${REACTOS_SOURCE_DIR}/sdk/tools/arm_uefi.py)
 
+    add_executable(arm_firmware_perf ${REACTOS_SOURCE_DIR}/modules/rostests/boot/arm/firmware-perf.c)
+    set_target_properties(arm_firmware_perf PROPERTIES SUFFIX ".efi")
+    set_subsystem(arm_firmware_perf efi_application)
+    set_entrypoint(arm_firmware_perf EfiEntry)
+    target_link_options(arm_firmware_perf PRIVATE -Wl,/driver,--exclude-all-symbols,--section-alignment,0x1000)
+    target_link_libraries(arm_firmware_perf blrtl libcntpr)
+    target_compile_definitions(arm_firmware_perf PRIVATE UEFIBOOT)
+    target_compile_options(arm_firmware_perf PRIVATE -mno-implicit-float)
+    add_dependencies(arm_firmware_perf xdk)
+    add_custom_command(TARGET arm_firmware_perf POST_BUILD
+        COMMAND ${ARM_UEFI_PYTHON} ${REACTOS_SOURCE_DIR}/sdk/tools/arm_uefi.py $<TARGET_FILE:arm_firmware_perf>
+        VERBATIM)
+    set_property(TARGET arm_firmware_perf APPEND PROPERTY LINK_DEPENDS ${REACTOS_SOURCE_DIR}/sdk/tools/arm_uefi.py)
+
     set(SMDKC210_TEST_SOURCES
         ${REACTOS_SOURCE_DIR}/modules/rostests/boot/arm/smdkc210.S
         ${REACTOS_SOURCE_DIR}/modules/rostests/boot/arm/smdkc210.c
-        ${CMAKE_CURRENT_SOURCE_DIR}/arch/arm/shortdesc.c)
+        ${CMAKE_CURRENT_SOURCE_DIR}/arch/arm/shortdesc.c
+        ${CMAKE_CURRENT_SOURCE_DIR}/arch/uefi/arm/paging.S
+        ${REACTOS_SOURCE_DIR}/ntoskrnl/nvs/arch/arm/bootpte.S)
     add_custom_command(OUTPUT ${REACTOS_BINARY_DIR}/arm-smdkc210.elf
         COMMAND ${CMAKE_C_COMPILER} --target=arm-none-eabi -mcpu=cortex-a9 -marm
-            -mfloat-abi=soft -ffreestanding -fno-builtin -fno-stack-protector
+            -DARM_PAGING_BARE_TEST -mfloat-abi=soft -ffreestanding -fno-builtin -fno-stack-protector
             -nostdlib -O1 -g -Wall -Wextra -Werror -fuse-ld=lld
             -I ${CMAKE_CURRENT_SOURCE_DIR}/arch/arm
             -I ${REACTOS_SOURCE_DIR}/ntoskrnl/include/internal/arm
+            -I ${REACTOS_SOURCE_DIR}/sdk/include
             -Wl,-T,${REACTOS_SOURCE_DIR}/modules/rostests/boot/arm/smdkc210.ld
             -Wl,--build-id=none ${SMDKC210_TEST_SOURCES}
             -o ${REACTOS_BINARY_DIR}/arm-smdkc210.elf
         DEPENDS ${SMDKC210_TEST_SOURCES}
             ${REACTOS_SOURCE_DIR}/ntoskrnl/include/internal/arm/processor.h
+            ${REACTOS_SOURCE_DIR}/ntoskrnl/include/internal/arm/abort.h
+            ${REACTOS_SOURCE_DIR}/sdk/include/reactos/arm/exynos4mct.h
             ${CMAKE_CURRENT_SOURCE_DIR}/arch/arm/shortdesc.h
             ${REACTOS_SOURCE_DIR}/modules/rostests/boot/arm/smdkc210.ld
         VERBATIM)
     add_custom_target(arm_smdkc210_test DEPENDS ${REACTOS_BINARY_DIR}/arm-smdkc210.elf)
+    add_custom_command(OUTPUT ${REACTOS_BINARY_DIR}/arm-smdkc210-boot.elf
+        COMMAND ${CMAKE_C_COMPILER} --target=arm-none-eabi -mcpu=cortex-a9 -marm
+            -nostdlib -g -fuse-ld=lld -Wl,--build-id=none
+            -Wl,--image-base=0x40000000,-Ttext=0x40008000,-e,SmdkBoot
+            ${REACTOS_SOURCE_DIR}/modules/rostests/boot/arm/smdkc210-boot.S
+            -o ${REACTOS_BINARY_DIR}/arm-smdkc210-boot.elf
+        DEPENDS ${REACTOS_SOURCE_DIR}/modules/rostests/boot/arm/smdkc210-boot.S
+        VERBATIM)
+    add_custom_target(arm_smdkc210_boot DEPENDS ${REACTOS_BINARY_DIR}/arm-smdkc210-boot.elf)
 endif()
 
 if(ARCH STREQUAL "arm" AND SARCH STREQUAL "virt")

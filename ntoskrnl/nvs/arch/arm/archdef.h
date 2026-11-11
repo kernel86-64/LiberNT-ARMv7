@@ -15,6 +15,7 @@
 #define MI_ARCH_VA_BITS         32
 #define MI_ARCH_PA_BITS         40
 #define MI_ARCH_PTE_BYTES       8
+#define MI_ARCH_SOFTWARE_PTE_BITS 32
 #define MI_ARCH_PAGE_SHIFT      12
 #define MI_ARCH_LARGE_LEVEL     1
 

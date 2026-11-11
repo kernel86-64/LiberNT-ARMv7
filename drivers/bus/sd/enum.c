@@ -2200,8 +2200,8 @@ SdBusProgramClock(
     /* Compute divisor */
     if (FdoExtension->MaxClockFrequency > 0)
     {
-        Divisor = (USHORT)SDHCI_CALC_CLK_DIVIDER(FdoExtension->MaxClockFrequency,
-                                              TargetClockKhz);
+        Divisor = (USHORT)SDHCI_CALC_CLK_DIVIDER_FOR_VERSION(FdoExtension->MaxClockFrequency,
+                                              TargetClockKhz, FdoExtension->SpecVersion);
     }
     else
     {

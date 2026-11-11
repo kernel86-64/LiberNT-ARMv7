@@ -10,6 +10,7 @@
 #include <setjmpex.h>
 #include <math.h>
 #include <float.h>
+#include <drivers/sd/sdhci.h>
 
 static EFI_SYSTEM_TABLE *Firmware;
 static jmp_buf Buffer;
@@ -17,6 +18,8 @@ static volatile long Counter;
 static DECLSPEC_ALIGN(8) volatile long long Counter64;
 
 extern int ArmTestSetjmpRegisters(void);
+extern BOOLEAN ArmTestExynosBoot(void);
+extern BOOLEAN ArmTestExynosCache(void);
 extern ULONG ArmTestVirtualUnwind(void);
 extern BOOLEAN ArmTestKernelDpcState(void);
 extern BOOLEAN ArmTestKernelMmio(void);
@@ -70,6 +73,16 @@ EfiEntry(EFI_HANDLE ImageHandle, EFI_SYSTEM_TABLE *SystemTable)
         Passed = FALSE;
     else
         Passed = ArmTestPeUnwindRegisters(LoadedImage->ImageBase) && Passed;
+    Passed = ArmTestExynosBoot() && Passed;
+    Passed = ArmTestExynosCache() && Passed;
+    Passed = Passed && SDHCI_CALC_CLK_DIVIDER_FOR_VERSION(50000, 400, SDHCI_SPEC_200) == 64;
+    Passed = Passed && SDHCI_CALC_CLK_DIVIDER_FOR_VERSION(33000, 400, SDHCI_SPEC_200) == 64;
+    Passed = Passed && SDHCI_CALC_CLK_DIVIDER_FOR_VERSION(24000, 400, SDHCI_SPEC_200) == 32;
+    Passed = Passed && SDHCI_CALC_CLK_DIVIDER_FOR_VERSION(50000, 25000, SDHCI_SPEC_200) == 1;
+    Passed = Passed && SDHCI_CALC_CLK_DIVIDER_FOR_VERSION(50000, 50000, SDHCI_SPEC_200) == 0;
+    Passed = Passed && SDHCI_CALC_CLK_DIVIDER_FOR_VERSION(50000, 400, SDHCI_SPEC_300) == 63;
+    Passed = Passed && SDHCI_CALC_CLK_DIVIDER_FOR_VERSION(33000, 400, SDHCI_SPEC_300) == 42;
+    Passed = Passed && SDHCI_CALC_CLK_DIVIDER_FOR_VERSION(24000, 400, SDHCI_SPEC_300) == 30;
     Passed = ArmTestKernelDpcState() && Passed;
     Passed = ArmTestKernelMmio() && Passed;
     Passed = ArmTestKernelPrcbHooks() && Passed;

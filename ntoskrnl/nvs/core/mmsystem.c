@@ -98,7 +98,7 @@ MiSpaceInitialize(
     _In_ BOOLEAN IsSystem)
 {
     const MI_ARCH_DESCRIPTOR *Arch = System->Arch;
-    ULONG Root;
+    ULONG Root, Pages, Index;
 
     RtlZeroMemory(Space, sizeof(*Space));
     Space->System = System;
@@ -111,12 +111,25 @@ MiSpaceInitialize(
     MiVadRootInitialize(&Space->AweRoot, 0, System->Pfn.FrameCount - 1);
     MiVadRootInitialize(&Space->CloneRoot, Space->LowestVa >> PAGE_SHIFT, Space->HighestVa >> PAGE_SHIFT);
 
-    Root = MiPfnAllocatePage(&System->Pfn, MI_ALLOCATE_ZEROED);
+    Pages = MiArchRootPageCount(Arch);
+    if (Pages == 0 || Pages > System->Pfn.FrameCount)
+        return STATUS_INVALID_PARAMETER;
+    Root = Pages == 1 ? MiPfnAllocatePage(&System->Pfn, MI_ALLOCATE_ZEROED) :
+                       MiPfnAllocateContiguous(&System->Pfn, Pages, 0, System->Pfn.FrameCount - 1, Pages);
     if (Root == MI_FRAME_INVALID)
         return STATUS_NO_MEMORY;
 
-    MiPfnInitializePage(&System->Pfn, Root, 0, 0, 0, MI_PFN_FLAG_PAGE_TABLE);
-    System->Pfn.Pfn[Root].PageTableOwner = Space;
+    for (Index = 0; Index < Pages; ++Index)
+    {
+        if (Pages != 1)
+        {
+            PVOID Mapping = MiArchMapFrame(Root + Index);
+            MI_ZERO_PAGE(Mapping);
+            MiArchUnmapFrame(Mapping);
+        }
+        MiPfnInitializePage(&System->Pfn, Root + Index, 0, 0, 0, MI_PFN_FLAG_PAGE_TABLE);
+        System->Pfn.Pfn[Root + Index].PageTableOwner = Space;
+    }
     Space->RootFrame = Root;
 
     if (!IsSystem)
@@ -205,6 +218,8 @@ VOID
 MiAddressSpaceDestroy(
     _Inout_ PMI_ADDRESS_SPACE Space)
 {
+    ULONG Index, Pages = MiArchRootPageCount(Space->System->Arch);
+
     MiVadFlushCache(Space);
     MiPtFlushEmpty(Space);
     MI_ASSERT(Space->VadRoot.NodeCount == 0);
@@ -213,7 +228,8 @@ MiAddressSpaceDestroy(
     MI_ASSERT(MI_ATOMIC_READ64(&Space->PageTablePages) == 0);
 
     MiLockRangeReset(Space);
-    MiPfnShareDecrement(&Space->System->Pfn, Space->RootFrame, TRUE);
+    for (Index = 0; Index < Pages; ++Index)
+        MiPfnShareDecrement(&Space->System->Pfn, Space->RootFrame + Index, TRUE);
     Space->RootFrame = 0;
 }
 

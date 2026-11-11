@@ -1,0 +1,16 @@
+; PROJECT:     LiberNT boot tests
+; LICENSE:     GPL-3.0-or-later
+; PURPOSE:     Native USB HID input in the SMDKC210 QEMU image
+; COPYRIGHT:   Copyright 2026 LiberNT contributors
+
+[Version]
+Signature = "$Windows NT$"
+
+[AddReg]
+HKLM,"SYSTEM\CurrentControlSet\Control\ServiceGroupOrder","List",0x00010000,"Boot Bus Extender","System Bus Extender","SCSI Class","Boot File System","File System","Base","Extended Base","Keyboard Port","Pointer Port","Keyboard Class","Pointer Class","Video Init","Video"
+HKLM,"SYSTEM\CurrentControlSet\Services\usbhub","BootFlags",0x00010001,4
+HKLM,"SYSTEM\CurrentControlSet\Services\usbhub","ErrorControl",0x00010001,1
+HKLM,"SYSTEM\CurrentControlSet\Services\usbhub","Group",0x00000000,"Boot Bus Extender"
+HKLM,"SYSTEM\CurrentControlSet\Services\usbhub","ImagePath",0x00020000,"system32\drivers\usbhub.sys"
+HKLM,"SYSTEM\CurrentControlSet\Services\usbhub","Start",0x00010001,0
+HKLM,"SYSTEM\CurrentControlSet\Services\usbhub","Type",0x00010001,1

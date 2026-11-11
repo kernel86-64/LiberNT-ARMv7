@@ -98,6 +98,7 @@ HKR, , SilentInstall,  0, 1
 ; QEMU SDHCI (virtio SD host controller)
 %QEMU_SD.DeviceDesc%     = sdbus_Inst, PCI\VEN_1B36&DEV_0007
 
+%SD_HOST_ACPI.DeviceDesc% = sdbus_Inst, ACPI\EXYN0006
 %SD_HOST_ACPI.DeviceDesc% = sdbus_Inst, ACPI\PNP0D40
 %SD_HOST_ACPI.DeviceDesc% = sdbus_Inst, ACPI\PNP0FFF
 %Intel_BYT_SD.DeviceDesc% = sdbus_Inst, ACPI\INT33BB

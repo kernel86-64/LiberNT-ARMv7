@@ -834,12 +834,17 @@ SdBusResetHost(
  *
  * @return The 32-bit register value.
  */
+ULONG
+SdBusHardwareAdjustPresentState(PFDO_EXTENSION FdoExtension, ULONG State);
+
 static __inline ULONG
 SdBusReadReg32(
     _In_ PFDO_EXTENSION FdoExtension,
     _In_ ULONG Register)
 {
-    return SDHCI_READ32(FdoExtension->RegisterBase, Register);
+    ULONG Value = SDHCI_READ32(FdoExtension->RegisterBase, Register);
+    return Register == SDHCI_PRESENT_STATE ?
+           SdBusHardwareAdjustPresentState(FdoExtension, Value) : Value;
 }
 
 /**

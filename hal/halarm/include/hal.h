@@ -37,5 +37,22 @@
 
 /* Internal HAL Headers */
 #include "halp.h"
+#include <drivers/acpi/acpi.h>
+#include <halacpi.h>
+
+#define TAG_HAL ' laH'
+#define HALP_ACPI_MAX_PHYSICAL_ADDRESS 0x7fffffffULL
+extern PWCHAR HalHardwareIdString;
+NTSTATUS NTAPI HaliInitPnpDriver(VOID);
+NTSTATUS NTAPI HalpQueryAcpiResourceRequirements(PIO_RESOURCE_REQUIREMENTS_LIST *Requirements);
+ULONG64 NTAPI HalpAllocPhysicalMemory(PLOADER_PARAMETER_BLOCK LoaderBlock, ULONG64 MaxAddress,
+                                     PFN_NUMBER PageCount, BOOLEAN Aligned);
+PVOID NTAPI HalpMapPhysicalMemory64(PHYSICAL_ADDRESS Address, PFN_COUNT PageCount);
+VOID NTAPI HalpUnmapVirtualAddress(PVOID Address, PFN_COUNT PageCount);
+NTSTATUS NTAPI HalpExynosInitializeCacheRanges(PLOADER_PARAMETER_BLOCK LoaderBlock);
+NTSTATUS NTAPI HalpExynosMemoryCachingRequirements(PHYSICAL_ADDRESS Address, SIZE_T Length,
+                                                  MEMORY_CACHING_TYPE *CacheType);
+
+PDMA_ADAPTER NTAPI HalpArmGetDmaAdapter(PVOID Device, PDEVICE_DESCRIPTION Description, PULONG Registers);
 
 /* EOF */

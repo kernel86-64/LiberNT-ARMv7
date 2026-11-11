@@ -12,6 +12,15 @@
 #define NDEBUG
 #include <debug.h>
 
+ULONG
+SdBusHardwareAdjustPresentState(PFDO_EXTENSION FdoExtension, ULONG State)
+{
+    PSDBUS_HARDWARE_EXTENSION Extension = FdoExtension->HardwareExtension;
+    if (Extension && Extension->Ops && Extension->Ops->AdjustPresentState)
+        return Extension->Ops->AdjustPresentState(FdoExtension, State);
+    return State;
+}
+
 NTSTATUS
 SdBusHardwareMapResources(
     _In_ PFDO_EXTENSION FdoExtension,
@@ -705,6 +714,7 @@ SdBusHardwareAttach(
     static const PCWSTR Bcm2835SdHostIds[] = { L"BCM2855" };
     static const PCWSTR BrcmstbIds[] = { L"BRCM5D12", L"80860F16" };
     static const PCWSTR Bcm2847Ids[] = { L"BCM2847" };
+    static const PCWSTR ExynosIds[] = { L"EXYN0006" };
     PDEVICE_OBJECT Pdo;
     ULONG SupportedModes = 0;
     NTSTATUS Status;
@@ -724,6 +734,9 @@ SdBusHardwareAttach(
     {
         return SdBusK1xAttach(FdoExtension);
     }
+
+    if (SdBusDeviceMatchesAnyId(Pdo, ExynosIds, RTL_NUMBER_OF(ExynosIds)))
+        return SdBusExynosAttach(FdoExtension);
 
     if (SdBusDeviceMatchesAnyId(Pdo, StarfiveJh7110Ids, RTL_NUMBER_OF(StarfiveJh7110Ids)))
     {

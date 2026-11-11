@@ -10,7 +10,7 @@
 #include <stdio.h>
 
 static _Alignas(16384) uint32_t Root[ARM_SD_ROOT_ENTRIES];
-static _Alignas(1024) uint32_t Tables[2 * ARM_SD_TABLE_ENTRIES];
+static _Alignas(4096) uint32_t Tables[2 * ARM_SD_TABLE_WORDS];
 
 int main(void)
 {
@@ -20,10 +20,10 @@ int main(void)
     Root[0] = 0x12345678;
     assert(ArmSdInitialize(&Context, Root + 1, Tables, 0x41000000, 2) == ArmSdInvalid);
     assert(Root[0] == 0x12345678);
-    assert(ArmSdInitialize(&Context, Root, Tables, 0xfffffc00, 2) == ArmSdInvalid);
-    assert(ArmSdInitialize(&Context, Root, Tables, 0xfffffc00, 1) == ArmSdSuccess);
+    assert(ArmSdInitialize(&Context, Root, Tables, 0xfffff000, 2) == ArmSdInvalid);
+    assert(ArmSdInitialize(&Context, Root, Tables, 0xfffff000, 1) == ArmSdSuccess);
     assert(ArmSdMapPage(&Context, 0xfffff000, 0xfffff000, 0) == ArmSdSuccess);
-    assert(Root[4095] == 0xfffffc01);
+    assert(Root[4095] == 0xfffff001);
     assert(Tables[255] == 0xfffff453);
     assert(ArmSdQuery(&Context, 0xffffffff, &Physical) == ArmSdSuccess);
     assert(Physical == 0xffffffff);
@@ -31,6 +31,7 @@ int main(void)
     assert(ArmSdInitialize(&Context, Root, Tables, 0x41000000, 2) == ArmSdSuccess);
     assert(ArmSdMapSection(&Context, 0x80000000, 0x40000000, ARM_SD_EXECUTE) == ArmSdSuccess);
     assert(Root[2048] == 0x40011402);
+    assert(ArmSdMapPage(&Context, 0x80004000, 0x40004000, ARM_SD_EXECUTE) == ArmSdSuccess);
     assert(ArmSdQuery(&Context, 0x800f1234, &Physical) == ArmSdSuccess);
     assert(Physical == 0x400f1234);
     assert(ArmSdMapSection(&Context, 0x80000000, 0x40000000, ARM_SD_EXECUTE) == ArmSdSuccess);
@@ -48,12 +49,15 @@ int main(void)
     assert(ArmSdMapPage(&Context, 0x90001000, 0x43000000, 0) == ArmSdConflict);
     assert(Tables[1] == 0x42000e7f);
     assert(ArmSdMapSection(&Context, 0x90000000, 0x42000000, 0) == ArmSdConflict);
+    Tables[ARM_SD_TABLE_ENTRIES] = 0x12345678;
     assert(ArmSdMapPage(&Context, 0xa0000000, 0x43000000, 0) == ArmSdSuccess);
+    assert(Root[2560] == 0x41001001);
+    assert(Tables[ARM_SD_TABLE_ENTRIES] == 0x12345678);
     assert(ArmSdMapPage(&Context, 0xb0000000, 0x44000000, 0) == ArmSdNoMemory);
     assert(Root[2816] == 0 && Context.Used == 2);
     assert(ArmSdMapPage(&Context, 0, 0, ARM_SD_DEVICE | ARM_SD_EXECUTE) == ArmSdInvalid);
     assert(ArmSdMapPage(&Context, 0, 0, ARM_SD_DEVICE | ARM_SD_WRITE_BACK) == ArmSdInvalid);
-    assert(ArmSdMapPage(&Context, 0, 0, 64) == ArmSdInvalid);
+    assert(ArmSdMapPage(&Context, 0, 0, 128) == ArmSdInvalid);
     assert(ArmSdQuery(&Context, 0xb0000000, &Physical) == ArmSdInvalid);
     Root[2816] = 0x41000801;
     assert(ArmSdQuery(&Context, 0xb0000000, &Physical) == ArmSdInvalid);
@@ -76,6 +80,12 @@ int main(void)
     assert(ArmSdUnmapPage(&Context, 0x80000000) == ArmSdSuccess);
     assert(ArmSdUnmapPage(&Context, 0x80000001) == ArmSdInvalid);
     assert(ArmSdUnmapPage(&Context, 0) == ArmSdSuccess);
+    assert(ArmSdInitialize(&Context, Root, Tables, 0x41000000, 2) == ArmSdSuccess);
+    assert(ArmSdMapSection(&Context, 0x01000000, 0x01000000,
+                           ARM_SD_EXECUTE | ARM_SD_WRITE_BACK | ARM_SD_NONSHAREABLE) == ArmSdSuccess);
+    assert(!(Context.Root[16] & 0x10000u));
+    assert(ArmSdUnmapPage(&Context, 0x01001000) == ArmSdSuccess);
+    assert(!(Context.Tables[((Context.Root[16] & 0xfffffc00u) - Context.TablesPhysical) / 4] & 0x400u));
     puts("ARM short-descriptor host tests: PASS");
     return 0;
 }

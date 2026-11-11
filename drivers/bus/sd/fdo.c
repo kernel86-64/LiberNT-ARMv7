@@ -447,8 +447,8 @@ SdBusInitializeController(
         USHORT Divisor;
         USHORT DivisorHigh;
 
-        Divisor = (USHORT)SDHCI_CALC_CLK_DIVIDER(FdoExtension->MaxClockFrequency,
-                                              SD_INIT_CLOCK_KHZ);
+        Divisor = (USHORT)SDHCI_CALC_CLK_DIVIDER_FOR_VERSION(FdoExtension->MaxClockFrequency,
+                                              SD_INIT_CLOCK_KHZ, FdoExtension->SpecVersion);
         /* Clamp to 8-bit + 2-bit extended divisor */
         if (Divisor > 0x3FF)
         {
@@ -799,7 +799,14 @@ SdBusFdoStartDevice(
     }
 
     /* Select the controller model before connecting an SDHCI interrupt. */
-    (VOID)SdBusHardwareAttach(FdoExtension);
+    Status = SdBusHardwareAttach(FdoExtension);
+    if (!NT_SUCCESS(Status))
+    {
+        SdBusReleaseControllerResources(FdoExtension);
+        Irp->IoStatus.Status = Status;
+        SdBusCompleteFdoIrp(FdoExtension, Irp, IO_NO_INCREMENT);
+        return Status;
+    }
 
     /* The polled SDHost backend does not use its interrupt resource. */
     if (FoundInterrupt && FdoExtension->HostType == SdBusHostSdhci)

@@ -129,6 +129,47 @@ MiControlReadAsync(
     return STATUS_PENDING;
 }
 
+typedef struct _MI_PAGING_CALLOUT
+{
+    PFILE_OBJECT FileObject;
+    PMDL Mdl;
+    ULONG64 Offset;
+    BOOLEAN Write;
+    ULONG Transferred;
+    NTSTATUS Status;
+} MI_PAGING_CALLOUT;
+
+static VOID NTAPI
+MiSubmitPagingCallout(PVOID Parameter)
+{
+    MI_PAGING_CALLOUT *Io = Parameter;
+    IO_STATUS_BLOCK Iosb = {0};
+    LARGE_INTEGER FileOffset;
+    KEVENT Event;
+    KIRQL OldIrql;
+    NTSTATUS Status;
+
+    KeInitializeEvent(&Event, NotificationEvent, FALSE);
+    FileOffset.QuadPart = (LONGLONG)Io->Offset;
+    OldIrql = KeGetCurrentIrql();
+    if (!Io->Write && OldIrql < APC_LEVEL)
+        KeRaiseIrql(APC_LEVEL, &OldIrql);
+
+    Status = Io->Write ? IoSynchronousPageWrite(Io->FileObject, Io->Mdl, &FileOffset, &Event, &Iosb)
+                       : IoPageRead(Io->FileObject, Io->Mdl, &FileOffset, &Event, &Iosb);
+    if (Status == STATUS_PENDING)
+    {
+        KeWaitForSingleObject(&Event, WrPageIn, KernelMode, FALSE, NULL);
+        Status = Iosb.Status;
+    }
+
+    if (!Io->Write && OldIrql < APC_LEVEL)
+        KeLowerIrql(OldIrql);
+    if (NT_SUCCESS(Status))
+        Io->Transferred = (ULONG)Iosb.Information;
+    Io->Status = Status;
+}
+
 NTSTATUS
 MiSubmitPagingMdl(
     _In_ PFILE_OBJECT FileObject,
@@ -137,32 +178,14 @@ MiSubmitPagingMdl(
     _In_ BOOLEAN Write,
     _Out_ PULONG Transferred)
 {
-    IO_STATUS_BLOCK Iosb = {0};
-    LARGE_INTEGER FileOffset;
-    KEVENT Event;
-    KIRQL OldIrql;
+    MI_PAGING_CALLOUT Io = {FileObject, Mdl, Offset, Write, 0, STATUS_SUCCESS};
     NTSTATUS Status;
 
     *Transferred = 0;
-    KeInitializeEvent(&Event, NotificationEvent, FALSE);
-    FileOffset.QuadPart = (LONGLONG)Offset;
-    OldIrql = KeGetCurrentIrql();
-    if (!Write && OldIrql < APC_LEVEL)
-        KeRaiseIrql(APC_LEVEL, &OldIrql);
-
-    Status = Write ? IoSynchronousPageWrite(FileObject, Mdl, &FileOffset, &Event, &Iosb)
-                   : IoPageRead(FileObject, Mdl, &FileOffset, &Event, &Iosb);
-    if (Status == STATUS_PENDING)
-    {
-        KeWaitForSingleObject(&Event, WrPageIn, KernelMode, FALSE, NULL);
-        Status = Iosb.Status;
-    }
-
-    if (!Write && OldIrql < APC_LEVEL)
-        KeLowerIrql(OldIrql);
-    if (NT_SUCCESS(Status))
-        *Transferred = (ULONG)Iosb.Information;
-    return Status;
+    Status = KeExpandKernelStackAndCalloutEx(MiSubmitPagingCallout, &Io, KERNEL_STACK_SIZE, FALSE, NULL);
+    if (!NT_SUCCESS(Status)) return Status;
+    *Transferred = Io.Transferred;
+    return Io.Status;
 }
 
 NTSTATUS

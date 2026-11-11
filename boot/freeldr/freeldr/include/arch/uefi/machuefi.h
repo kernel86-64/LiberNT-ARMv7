@@ -124,6 +124,9 @@ UefiStopFirmwareWatchdogs(VOID);
 PFREELDR_MEMORY_DESCRIPTOR
 UefiMemGetMemoryMap(ULONG *MemoryMapSize);
 
+const EFI_MEMORY_DESCRIPTOR *
+UefiMemNextAcpiRange(PULONG Cursor);
+
 VOID
 UefiGetExtendedBIOSData(PULONG ExtendedBIOSDataArea,
                         PULONG ExtendedBIOSDataSize);

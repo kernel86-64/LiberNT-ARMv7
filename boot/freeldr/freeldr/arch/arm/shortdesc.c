@@ -9,7 +9,7 @@
 
 static int ArmSdFlagsValid(uint32_t Flags)
 {
-    return !(Flags & ~63u) &&
+    return !(Flags & ~127u) &&
            !((Flags & ARM_SD_DEVICE) && (Flags & (ARM_SD_EXECUTE | ARM_SD_WRITE_BACK)));
 }
 
@@ -17,6 +17,7 @@ static uint32_t ArmSdAttributes(uint32_t Flags, int Section)
 {
     uint32_t Entry = 2u | (Section ? 0x10400u : 0x410u);
 
+    if (Flags & ARM_SD_NONSHAREABLE) Entry &= ~(Section ? 0x10000u : 0x400u);
     if (!(Flags & ARM_SD_EXECUTE)) Entry |= Section ? 0x10u : 1u;
     if (Flags & ARM_SD_READ_ONLY) Entry |= Section ? 0x8000u : 0x200u;
     if (Flags & ARM_SD_USER) Entry |= Section ? 0x800u : 0x20u;
@@ -37,8 +38,8 @@ int ArmSdInitialize(ARM_SD_CONTEXT *Context, uint32_t *Root,
     uint32_t Index;
 
     if (!Context || !Root || ((uintptr_t)Root & 16383u) || Count > ARM_SD_ROOT_ENTRIES ||
-        (Count && (!Tables || ((uintptr_t)Tables & 1023u) || (TablesPhysical & 1023u))) ||
-        (uint64_t)TablesPhysical + (uint64_t)Count * 1024u > 0x100000000ull)
+        (Count && (!Tables || ((uintptr_t)Tables & (ARM_SD_TABLE_BYTES - 1)) || (TablesPhysical & (ARM_SD_TABLE_BYTES - 1)))) ||
+        (uint64_t)TablesPhysical + (uint64_t)Count * ARM_SD_TABLE_BYTES > 0x100000000ull)
         return ArmSdInvalid;
     Context->Root = Root;
     Context->Tables = Tables;
@@ -46,7 +47,7 @@ int ArmSdInitialize(ARM_SD_CONTEXT *Context, uint32_t *Root,
     Context->Capacity = Count;
     Context->Used = 0;
     for (Index = 0; Index < ARM_SD_ROOT_ENTRIES; ++Index) Root[Index] = 0;
-    for (Index = 0; Index < Count * ARM_SD_TABLE_ENTRIES; ++Index) Tables[Index] = 0;
+    for (Index = 0; Index < Count * ARM_SD_TABLE_WORDS; ++Index) Tables[Index] = 0;
     return ArmSdSuccess;
 }
 
@@ -69,7 +70,8 @@ static uint32_t *ArmSdTable(const ARM_SD_CONTEXT *Context, uint32_t Entry)
     uint32_t Offset = Physical - Context->TablesPhysical;
 
     if ((Entry & 3u) != 1u || Physical < Context->TablesPhysical ||
-        Offset / 1024u >= Context->Used)
+        (Offset & (ARM_SD_TABLE_BYTES - 1)) ||
+        Offset / ARM_SD_TABLE_BYTES >= Context->Used)
         return 0;
     return Context->Tables + Offset / sizeof(uint32_t);
 }
@@ -81,10 +83,16 @@ int ArmSdMapPage(ARM_SD_CONTEXT *Context, uint32_t Virtual, uint32_t Physical, u
     if (!Context || !Context->Root || ((Virtual | Physical) & 4095u) || !ArmSdFlagsValid(Flags))
         return ArmSdInvalid;
     Root = &Context->Root[Virtual >> 20];
+    if ((*Root & 3u) == 2u && !(*Root & 0x40000u))
+    {
+        Entry = (*Root & 0xfff00000u) | (Virtual & 0xff000u) | 2u |
+                (*Root & 12u) | ((*Root >> 4) & 1u) | ((*Root >> 6) & 0xff0u);
+        return Entry == (Physical | ArmSdAttributes(Flags, 0)) ? ArmSdSuccess : ArmSdConflict;
+    }
     if (!*Root)
     {
         if (Context->Used == Context->Capacity) return ArmSdNoMemory;
-        *Root = (Context->TablesPhysical + Context->Used++ * 1024u) | 1u;
+        *Root = (Context->TablesPhysical + Context->Used++ * ARM_SD_TABLE_BYTES) | 1u;
     }
     Table = ArmSdTable(Context, *Root);
     if (!Table) return ArmSdConflict;
@@ -125,11 +133,11 @@ int ArmSdUnmapPage(ARM_SD_CONTEXT *Context, uint32_t Virtual)
     if ((Entry & 3u) == 2u && !(Entry & 0x40000u))
     {
         if (Context->Used == Context->Capacity) return ArmSdNoMemory;
-        Table = Context->Tables + Context->Used * ARM_SD_TABLE_ENTRIES;
+        Table = Context->Tables + Context->Used * ARM_SD_TABLE_WORDS;
         Flags = 2u | (Entry & 12u) | ((Entry >> 4) & 1u) | ((Entry >> 6) & 0xff0u);
         for (Index = 0; Index < ARM_SD_TABLE_ENTRIES; ++Index)
             Table[Index] = (Entry & 0xfff00000u) | (Index << 12) | Flags;
-        *Root = (Context->TablesPhysical + Context->Used++ * 1024u) | 1u;
+        *Root = (Context->TablesPhysical + Context->Used++ * ARM_SD_TABLE_BYTES) | 1u;
     }
     Table = ArmSdTable(Context, *Root);
     if (!Table) return ArmSdInvalid;

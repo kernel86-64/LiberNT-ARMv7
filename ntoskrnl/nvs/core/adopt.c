@@ -18,12 +18,12 @@ MiSpaceAdoptCommon(
     _In_ BOOLEAN IsSystem)
 {
     const MI_ARCH_DESCRIPTOR *Arch = System->Arch;
-    PMI_PFN Root;
+    ULONG Pages = MiArchRootPageCount(Arch), Index;
 
-    if (RootFrame >= System->Pfn.FrameCount)
+    if (Pages == 0 || Pages > System->Pfn.FrameCount || RootFrame > System->Pfn.FrameCount - Pages ||
+        (RootFrame & (Pages - 1)))
         return STATUS_INVALID_PARAMETER;
 
-    Root = &System->Pfn.Pfn[RootFrame];
     RtlZeroMemory(Space, sizeof(*Space));
     Space->System = System;
     Space->IsSystem = IsSystem;
@@ -36,11 +36,15 @@ MiSpaceAdoptCommon(
     MiVadRootInitialize(&Space->AweRoot, 0, System->Pfn.FrameCount - 1);
     MiVadRootInitialize(&Space->CloneRoot, Space->LowestVa >> PAGE_SHIFT, Space->HighestVa >> PAGE_SHIFT);
 
-    if (Root->State == MiPageUnusable)
-        MiPfnMarkInUse(&System->Pfn, RootFrame, 1);
+    for (Index = 0; Index < Pages; ++Index)
+    {
+        PMI_PFN Root = &System->Pfn.Pfn[RootFrame + Index];
 
-    MI_ATOMIC_OR8(&Root->Flags, MI_PFN_FLAG_PAGE_TABLE | MI_PFN_FLAG_PINNED);
-    Root->PageTableOwner = Space;
+        if (Root->State == MiPageUnusable)
+            MiPfnMarkInUse(&System->Pfn, RootFrame + Index, 1);
+        MI_ATOMIC_OR8(&Root->Flags, MI_PFN_FLAG_PAGE_TABLE | MI_PFN_FLAG_PINNED);
+        Root->PageTableOwner = Space;
+    }
     return STATUS_SUCCESS;
 }
 
@@ -65,7 +69,7 @@ MiAdoptTable(
 {
     PMI_SYSTEM System = Space->System;
     const MI_ARCH_DESCRIPTOR *Arch = System->Arch;
-    PMI_PTE Table = MiArchMapFrame(Frame);
+    PMI_PTE Table = MiArchMapTableFrame(Arch, Frame, Level);
     ULONG Entries = (ULONG)Arch->Level[Level].EntryCount;
     PMI_PFN Entry = &System->Pfn.Pfn[Frame];
     ULONG Index;
@@ -75,7 +79,7 @@ MiAdoptTable(
 
     Entry->PteFrame = ParentFrame;
     Entry->PageTableOwner = Space;
-    Entry->PteAddress = ((ULONG64)ParentFrame << PAGE_SHIFT) + (ULONG64)ParentIndex * sizeof(MI_PTE);
+    Entry->PteAddress = MiArchTableSlotAddress(Arch, ParentFrame, ParentIndex, Level + 1);
     MI_ATOMIC_OR8(&Entry->Flags, MI_PFN_FLAG_PAGE_TABLE | MI_PFN_FLAG_PINNED);
     MI_ATOMIC_ADD64(&Space->PageTablePages, 1);
 
@@ -105,7 +109,7 @@ MiSystemAdoptBootMappings(
     const MI_ARCH_DESCRIPTOR *Arch = System->Arch;
     LONG Top = Arch->PagingLevels - 1;
     ULONG64 Span = 1ULL << Arch->Level[Top].Shift;
-    PMI_PTE Root = MiArchMapFrame(Space->RootFrame);
+    PMI_PTE Root = MiArchMapTableFrame(Arch, Space->RootFrame, Arch->PagingLevels - 1);
     ULONG First = (ULONG)((Arch->SystemAddressStart >> Arch->Level[Top].Shift) & Arch->Level[Top].IndexMask);
     ULONG Last = (ULONG)((Arch->SystemAddressEnd >> Arch->Level[Top].Shift) & Arch->Level[Top].IndexMask);
     ULONG Index;
@@ -204,7 +208,7 @@ MiSystemPopulateTopLevel(
     PMI_ADDRESS_SPACE Space = &System->SystemSpace;
     const MI_ARCH_DESCRIPTOR *Arch = System->Arch;
     LONG Top = Arch->PagingLevels - 1;
-    PMI_PTE Root = MiArchMapFrame(Space->RootFrame);
+    PMI_PTE Root = MiArchMapTableFrame(Arch, Space->RootFrame, Arch->PagingLevels - 1);
     ULONG64 Start = (Arch->SystemReservedEnd > Arch->SystemAddressStart) ? Arch->SystemReservedEnd
                                                                          : Arch->SystemAddressStart;
     ULONG First = (ULONG)((Start >> Arch->Level[Top].Shift) & Arch->Level[Top].IndexMask);
@@ -222,8 +226,7 @@ MiSystemPopulateTopLevel(
         if (Table == MI_FRAME_INVALID)
             return STATUS_NO_MEMORY;
 
-        MiPfnInitializePage(&System->Pfn, Table, ((ULONG64)Space->RootFrame << PAGE_SHIFT) +
-                                                     (ULONG64)Index * sizeof(MI_PTE),
+        MiPfnInitializePage(&System->Pfn, Table, MiArchTableSlotAddress(Arch, Space->RootFrame, Index, Top),
                             Space->RootFrame, 0, MI_PFN_FLAG_PAGE_TABLE | MI_PFN_FLAG_PINNED);
         System->Pfn.Pfn[Table].PageTableOwner = Space;
         MiArchPteWrite(&Root[Index], MiArchPteMakeTable(Table, 0));

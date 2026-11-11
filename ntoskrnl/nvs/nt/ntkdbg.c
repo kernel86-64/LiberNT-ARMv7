@@ -93,7 +93,7 @@ ExpKdbgExtPte(
     for (Level = Arch->PagingLevels - 1; Level >= 0; Level--)
     {
         ULONG Index = (ULONG)((Address >> Arch->Level[Level].Shift) & Arch->Level[Level].IndexMask);
-        MI_PTE Pte = MiArchPteRead((PMI_PTE)MiArchMapFrame(Frame) + Index);
+        MI_PTE Pte = MiArchPteRead((PMI_PTE)MiArchMapTableFrame(Arch, Frame, Level) + Index);
 
         KdbpPrint("L%ld table %I64x index %lu entry %016I64x", Level, Frame, Index, Pte);
 

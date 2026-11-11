@@ -354,6 +354,18 @@ SDHCI_CALC_CLK_DIVIDER(
 #define SDHCI_SPEC_400                  0x03
 #define SDHCI_SPEC_410                  0x04
 
+static __inline USHORT
+SDHCI_CALC_CLK_DIVIDER_FOR_VERSION(ULONG BaseClockKhz, ULONG TargetClockKhz, USHORT Version)
+{
+    ULONG Divisor;
+    if (Version >= SDHCI_SPEC_300)
+        return SDHCI_CALC_CLK_DIVIDER(BaseClockKhz, TargetClockKhz);
+    if (!BaseClockKhz || !TargetClockKhz || BaseClockKhz <= TargetClockKhz)
+        return 0;
+    for (Divisor = 2; Divisor < 256 && (ULONGLONG)TargetClockKhz * Divisor < BaseClockKhz; Divisor <<= 1) {}
+    return (USHORT)(Divisor >> 1);
+}
+
 /**
  * @brief ADMA2 Descriptor Structure
  */

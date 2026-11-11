@@ -6,11 +6,13 @@
  */
 
 #include <ntoskrnl.h>
+#include <internal/arm/abort.h>
+
+NTSTATUS KiArmGrowKernelFaultStack(ULONG_PTR StackPointer);
 
 static NTSTATUS KiArmMemoryAbort(PKTRAP_FRAME Trap, BOOLEAN Execute)
 {
     ULONG Fault = Trap->FaultStatus;
-    ULONG StatusCode = Fault & 0x3F;
     KPROCESSOR_MODE Mode = KiGetPreviousMode(Trap);
     PKEXCEPTION_FRAME Exception = (PKEXCEPTION_FRAME)Trap - 1;
     PKTHREAD Thread = KeGetCurrentThread();
@@ -21,10 +23,15 @@ static NTSTATUS KiArmMemoryAbort(PKTRAP_FRAME Trap, BOOLEAN Execute)
     Thread->TrapFrame = Trap;
     if (Execute)
         Fault |= MI_ARM_FAULT_EXECUTE;
-    if (StatusCode >= 4 && StatusCode <= 15)
+    if (KiArmAbortCanPage(Fault))
     {
+        ULONG_PTR StackPointer;
+
+        __asm__ __volatile__("mov %0, sp" : "=r"(StackPointer));
         _enable();
-        Status = MmAccessFault(Fault, (PVOID)Trap->FaultAddress, Mode, Trap);
+        Status = KiArmGrowKernelFaultStack(StackPointer);
+        if (NT_SUCCESS(Status))
+            Status = MmAccessFault(Fault, (PVOID)Trap->FaultAddress, Mode, Trap);
         _disable();
         if (NT_SUCCESS(Status))
         {
@@ -32,12 +39,43 @@ static NTSTATUS KiArmMemoryAbort(PKTRAP_FRAME Trap, BOOLEAN Execute)
             return STATUS_SUCCESS;
         }
     }
+    if (Mode == KernelMode)
+    {
+        ULONG Frame = Trap->R11, Index;
+        ULONG_PTR Limit = (ULONG_PTR)Thread->StackLimit;
+        ULONG_PTR Base = (ULONG_PTR)Thread->StackBase;
+        DbgPrint("ARM abort pc=%08lx lr=%08lx sp=%08lx fp=%08lx fsr=%08lx far=%08lx r0=%08lx r1=%08lx thread=%p stack=%p-%p\n",
+                 Trap->Pc, Trap->Lr, Trap->Sp, Trap->R11, Trap->FaultStatus,
+                 Trap->FaultAddress, Trap->R0, Trap->R1, Thread, Thread->StackLimit, Thread->StackBase);
+        for (Index = 0; Index < 12 && !(Frame & 3) && Frame >= Limit && Frame <= Base - 8; ++Index)
+        {
+            PULONG Link = (PULONG)(ULONG_PTR)Frame;
+            DbgPrint("ARM frame %lu fp=%08lx return=%08lx\n", Index, Frame, Link[1]);
+            if (Link[0] <= Frame) break;
+            Frame = Link[0];
+        }
+        if (Trap->R0 == Trap->FaultAddress && Trap->R1 >= FIELD_OFFSET(IRP, IoStatus))
+        {
+            PIRP Irp = CONTAINING_RECORD((PIO_STATUS_BLOCK)(ULONG_PTR)Trap->R1, IRP, IoStatus);
+            if (MmIsAddressValid(Irp) && MmIsAddressValid((PUCHAR)Irp + sizeof(*Irp) - 1) &&
+                Irp->Type == IO_TYPE_IRP && Irp->StackCount > 0 && Irp->StackCount < 32)
+            {
+                PIO_STACK_LOCATION Top = (PIO_STACK_LOCATION)(Irp + 1) + Irp->StackCount - 1;
+                DbgPrint("ARM IOSB irp=%p flags=%08lx pending=%u mode=%u iosb=%p event=%p apcthread=%p spare=%08lx\n",
+                         Irp, Irp->Flags, Irp->PendingReturned, Irp->RequestorMode,
+                         Irp->UserIosb, Irp->UserEvent, Irp->Tail.Apc.Thread, Irp->Tail.Apc.SpareLong0);
+                if (MmIsAddressValid(Top) && MmIsAddressValid((PUCHAR)Top + sizeof(*Top) - 1))
+                    DbgPrint("ARM IOSB top major=%u minor=%u device=%p file=%p\n",
+                             Top->MajorFunction, Top->MinorFunction, Top->DeviceObject, Top->FileObject);
+            }
+        }
+    }
     Record.ExceptionCode = Status;
     Record.ExceptionAddress = (PVOID)(Trap->Pc & ~1UL);
     Record.NumberParameters = 2;
     Record.ExceptionInformation[0] = Execute ? 8 : (MI_IS_WRITE_ACCESS(Fault) ? 1 : 0);
     Record.ExceptionInformation[1] = Trap->FaultAddress;
-    if (StatusCode == 0x21)
+    if (KiArmAbortAlignment(Fault))
     {
         Record.ExceptionCode = STATUS_DATATYPE_MISALIGNMENT;
         Record.NumberParameters = 0;
@@ -62,7 +100,7 @@ NTSTATUS KiPrefetchAbortHandler(PKTRAP_FRAME TrapFrame)
 {
     EXCEPTION_RECORD Record = {0};
 
-    if ((TrapFrame->FaultStatus & 0x3F) == 0x22)
+    if (KiArmAbortDebug(TrapFrame->FaultStatus))
     {
         Record.ExceptionCode = STATUS_BREAKPOINT;
         Record.ExceptionAddress = (PVOID)(TrapFrame->Pc & ~1UL);

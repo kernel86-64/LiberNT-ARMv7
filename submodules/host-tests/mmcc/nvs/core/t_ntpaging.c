@@ -28,6 +28,22 @@ typedef struct _PAGING_FILE
 } PAGING_FILE;
 
 static _Thread_local PAGING_FILE *ActivePaging;
+static _Thread_local ULONG PagingCalloutDepth;
+static _Thread_local NTSTATUS PagingExpansionStatus;
+
+NTSTATUS
+KeExpandKernelStackAndCalloutEx(PEXPAND_STACK_CALLOUT Callout, PVOID Parameter, SIZE_T Size,
+                                BOOLEAN Wait, PVOID Context)
+{
+    CHECK(Size == KERNEL_STACK_SIZE);
+    CHECK(!Wait && Context == NULL);
+    CHECK(MiHostIrql <= APC_LEVEL);
+    if (!NT_SUCCESS(PagingExpansionStatus)) return PagingExpansionStatus;
+    ++PagingCalloutDepth;
+    Callout(Parameter);
+    --PagingCalloutDepth;
+    return STATUS_SUCCESS;
+}
 
 VOID
 KeInitializeEvent(KEVENT *Event, ULONG Type, BOOLEAN State)
@@ -43,6 +59,7 @@ KeWaitForSingleObject(PVOID Object, ULONG Reason, ULONG Mode, BOOLEAN Alertable,
     KEVENT *Event = Object;
     PAGING_FILE *File = Event->Context;
 
+    CHECK(PagingCalloutDepth == 1);
     CHECK(File != NULL && File->PendingMdl != NULL && File->PendingIosb != NULL);
     CHECK(Reason == WrPageIn && Mode == KernelMode && !Alertable && Timeout == NULL);
     CHECK(MiHostIrql == (File->Write ? 0 : APC_LEVEL));
@@ -64,6 +81,7 @@ Submit(PFILE_OBJECT Object, PMDL Mdl, PLARGE_INTEGER Offset, KEVENT *Event, PIO_
 {
     PAGING_FILE *File = Object->FsContext;
 
+    CHECK(PagingCalloutDepth == 1);
     CHECK(MiHostIrql == (Write ? 0 : APC_LEVEL));
     CHECK(Mdl->Next == NULL && Mdl->Process == NULL);
     CHECK(Mdl->StartVa == NULL && Mdl->MappedSystemVa == NULL && Mdl->ByteOffset == 0);
@@ -177,5 +195,11 @@ TestNtPaging(void)
     CHECK(MiControlReadPages(&Control, 1024, Frames, 2) == STATUS_END_OF_FILE);
     CHECK(MiPagingIoFrames(&Object, 1024, Frames, 2, TRUE, &Transferred) == STATUS_INVALID_PARAMETER);
     CHECK(MiPagingIoFrames(&Object, 1025, Frames, 2, FALSE, &Transferred) == STATUS_INVALID_PARAMETER);
+    memset(&File, 0, sizeof(File));
+    PagingExpansionStatus = STATUS_NO_MEMORY;
+    Transferred = 123;
+    CHECK(MiPagingIoFrames(&Object, 0, Frames, 1, TRUE, &Transferred) == STATUS_NO_MEMORY);
+    CHECK(File.Calls == 0 && Transferred == 0 && PagingCalloutDepth == 0 && MiHostIrql == 0);
+    PagingExpansionStatus = STATUS_SUCCESS;
     ActivePaging = NULL;
 }

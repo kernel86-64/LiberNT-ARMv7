@@ -27,6 +27,8 @@ typedef struct _SDBUS_HARDWARE_OPS
     ULONG (*GetBaseClock)(_In_ PFDO_EXTENSION FdoExtension);
     NTSTATUS (*SetHs400EnhancedStrobe)(_In_ PFDO_EXTENSION FdoExtension,
                                        _In_ BOOLEAN Enable);
+    ULONG (*AdjustPresentState)(_In_ PFDO_EXTENSION FdoExtension,
+                               _In_ ULONG State);
 } SDBUS_HARDWARE_OPS, *PSDBUS_HARDWARE_OPS;
 
 typedef struct _SDBUS_HARDWARE_EXTENSION
@@ -88,6 +90,10 @@ SdBusHardwareAttach(
 
 NTSTATUS
 SdBusK1xAttach(
+    _In_ PFDO_EXTENSION FdoExtension);
+
+NTSTATUS
+SdBusExynosAttach(
     _In_ PFDO_EXTENSION FdoExtension);
 
 NTSTATUS

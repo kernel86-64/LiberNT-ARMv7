@@ -30,7 +30,7 @@ PFN_COUNT MiUsedSwapPages;
 UCHAR MmDisablePagingExecutive = 1;
 
 static PMI_NT_PAGEFILE MiPagingFile;
-static KGUARDED_MUTEX MiPagingFileCreationLock;
+static KMUTEX MiPagingFileCreationLock;
 static BOOLEAN MiPagingFileLockReady;
 static WORK_QUEUE_ITEM MiPagingFileExtendItem;
 static KEVENT MiPagingFileExtendEvent;
@@ -387,7 +387,7 @@ NtCreatePagingFile(
 
     if (!MiPagingFileLockReady)
     {
-        KeInitializeGuardedMutex(&MiPagingFileCreationLock);
+        KeInitializeMutex(&MiPagingFileCreationLock, 0);
         MiPagingFileLockReady = TRUE;
     }
 
@@ -436,11 +436,12 @@ NtCreatePagingFile(
         return STATUS_INVALID_PARAMETER_2;
     }
 
-    KeAcquireGuardedMutex(&MiPagingFileCreationLock);
+    KeWaitForSingleObject(&MiPagingFileCreationLock, Executive, KernelMode, FALSE, NULL);
+    ASSERT(KeGetCurrentIrql() == PASSIVE_LEVEL && !KeAreAllApcsDisabled());
 
     if (MiPagingFile != NULL)
     {
-        KeReleaseGuardedMutex(&MiPagingFileCreationLock);
+        KeReleaseMutex(&MiPagingFileCreationLock, FALSE);
         ExFreePoolWithTag(Buffer, 'nPmM');
         return STATUS_TOO_MANY_PAGING_FILES;
     }
@@ -448,7 +449,7 @@ NtCreatePagingFile(
     PagingFile = ExAllocatePoolWithTag(NonPagedPool, sizeof(*PagingFile), 'fPmM');
     if (PagingFile == NULL)
     {
-        KeReleaseGuardedMutex(&MiPagingFileCreationLock);
+        KeReleaseMutex(&MiPagingFileCreationLock, FALSE);
         ExFreePoolWithTag(Buffer, 'nPmM');
         return STATUS_INSUFFICIENT_RESOURCES;
     }
@@ -500,7 +501,7 @@ NtCreatePagingFile(
 
         ExFreePoolWithTag(PagingFile, 'fPmM');
         ExFreePoolWithTag(Buffer, 'nPmM');
-        KeReleaseGuardedMutex(&MiPagingFileCreationLock);
+        KeReleaseMutex(&MiPagingFileCreationLock, FALSE);
         return Status;
     }
 
@@ -525,7 +526,7 @@ NtCreatePagingFile(
     DbgPrint("Paging file %wZ created, %I64u MB, maximum %I64u MB\n", &PagingFile->Name,
              PagingFile->Core.SlotCount >> (20 - PAGE_SHIFT), PagingFile->MaximumSlots >> (20 - PAGE_SHIFT));
 
-    KeReleaseGuardedMutex(&MiPagingFileCreationLock);
+    KeReleaseMutex(&MiPagingFileCreationLock, FALSE);
 
     if (PagingFile->FileObject->DeviceObject->Flags & DO_SYSTEM_BOOT_PARTITION)
         IoInitializeCrashDump(PagingFile->FileHandle);

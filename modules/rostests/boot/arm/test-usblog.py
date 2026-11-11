@@ -36,12 +36,18 @@ class ReceiverTests(unittest.TestCase):
             libusb_release_interface=Mock(), libusb_close=Mock(),
             libusb_bulk_transfer=Mock(side_effect=transfer))
 
-    def receive(self, lib, build):
+    def receive(self, lib, build, complete=RECEIVER.COMPLETE):
         with patch.object(RECEIVER, 'usb_library', return_value=lib), \
                 patch.object(RECEIVER, 'open_device', side_effect=lib.open_result), \
                 patch.object(RECEIVER.sys, 'stdout', SimpleNamespace(buffer=io.BytesIO())), \
                 contextlib.redirect_stderr(io.StringIO()):
-            RECEIVER.capture(build)
+            RECEIVER.capture(build, complete)
+
+    def test_custom_fragmented_completion_marker(self):
+        lib = self.library([(b'Firmware performance: COM', 0), (b'PLETE', 0)])
+        with tempfile.TemporaryDirectory() as directory:
+            self.receive(lib, Path(directory), b'Firmware performance: COMPLETE')
+        lib.libusb_close.assert_called_once_with(1)
 
     def test_device_appears_after_more_than_a_minute(self):
         lib = self.library([(RECEIVER.COMPLETE, 0)])

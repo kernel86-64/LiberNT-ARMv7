@@ -37,6 +37,14 @@ set(MM_CORE
     ${NVS_ROOT}/vad/vadtree.c)
 
 set(CC_ROOT ${NVS_ROOT}/../cc)
+add_executable(ntpaging_host ntpaging_main.c t_ntpaging.c
+    ${NVS_ROOT}/nt/ntpagingio.c ${NVS_ROOT}/nt/ntfileio.c)
+target_compile_definitions(ntpaging_host PRIVATE MM_HOST_TEST CC_HOST_TEST MACHINE_ARM64)
+target_compile_options(ntpaging_host PRIVATE -Wall -Wextra -Wno-unused-parameter
+    -g -O1 -ffunction-sections -fdata-sections -fsanitize=address,undefined)
+target_link_options(ntpaging_host PRIVATE -Wl,--gc-sections -fsanitize=address,undefined)
+add_test(NAME nvs.ntpaging_host COMMAND ntpaging_host)
+
 set(CC_ENGINE
     ${CC_ROOT}/engine/viewpool.c
     ${CC_ROOT}/engine/cachemap.c

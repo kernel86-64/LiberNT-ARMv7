@@ -39,7 +39,7 @@ MiPtWalk(
     for (Level = Arch->PagingLevels - 1; Level > (LONG)TargetLevel; Level--)
     {
         ULONG Index = MiPtIndex(Arch, VirtualAddress, Level);
-        PMI_PTE Slot = (PMI_PTE)MiArchMapFrame(Frame) + Index;
+        PMI_PTE Slot = (PMI_PTE)MiArchMapTableFrame(Arch, Frame, Level) + Index;
         MI_PTE Entry = MiArchPteRead(Slot);
 
         if (MiArchPteIsValid(Entry) && MiArchPteIsBlock(Entry, (ULONG)Level))
@@ -66,7 +66,7 @@ MiPtWalk(
             else
             {
                 MiPfnInitializePage(&System->Pfn, Table,
-                                    ((ULONG64)Frame << PAGE_SHIFT) + (ULONG64)Index * sizeof(MI_PTE),
+                                    MiArchTableSlotAddress(Arch, Frame, Index, Level),
                                     Frame, 0, MI_PFN_FLAG_PAGE_TABLE);
                 System->Pfn.Pfn[Table].PageTableOwner = Space;
 
@@ -96,7 +96,7 @@ MiPtWalk(
     if (TableFrame != NULL)
         *TableFrame = Frame;
 
-    return (PMI_PTE)MiArchMapFrame(Frame) + MiPtIndex(Arch, VirtualAddress, TargetLevel);
+    return (PMI_PTE)MiArchMapTableFrame(Arch, Frame, TargetLevel) + MiPtIndex(Arch, VirtualAddress, TargetLevel);
 }
 
 BOOLEAN
@@ -117,7 +117,7 @@ MiPtTranslateRoot(
 
     for (Level = Arch->PagingLevels - 1; Level >= 0; Level--)
     {
-        PMI_PTE Table = MiArchMapFrame(Frame);
+        PMI_PTE Table = MiArchMapTableFrame(Arch, Frame, Level);
         PMI_PTE Slot;
         MI_PTE Entry;
         ULONG64 Span;
@@ -199,6 +199,13 @@ MiPtSlotAddress(
     return ((ULONG64)TableFrame << PAGE_SHIFT) + ((ULONG_PTR)Slot & (PAGE_SIZE - 1));
 }
 
+ULONG64
+MiPtSlotAddressAtLevel(const MI_ARCH_DESCRIPTOR *Arch, ULONG TableFrame, ULONG64 VirtualAddress, ULONG Level)
+{
+    MI_ASSERT(Level < Arch->PagingLevels);
+    return MiArchTableSlotAddress(Arch, TableFrame, MiPtIndex(Arch, VirtualAddress, Level), Level);
+}
+
 NTSTATUS
 MiPtSplitBootBlock(PMI_ADDRESS_SPACE Space, ULONG64 VirtualAddress, PMI_PTE AliasSlot, ULONG ParentFrame)
 {
@@ -216,15 +223,14 @@ MiPtSplitBootBlock(PMI_ADDRESS_SPACE Space, ULONG64 VirtualAddress, PMI_PTE Alia
     Frame = MiPfnAllocatePage(&System->Pfn, MI_ALLOCATE_ZEROED);
     if (Frame == MI_FRAME_INVALID)
         return STATUS_NO_MEMORY;
-    Table = MiArchMapFrame(Frame);
+    MiPfnInitializePage(&System->Pfn, Frame,
+                        MiPtSlotAddressAtLevel(Arch, ParentFrame, VirtualAddress, 1),
+                        ParentFrame, 0, MI_PFN_FLAG_PAGE_TABLE | MI_PFN_FLAG_PINNED);
+    System->Pfn.Pfn[Frame].PageTableOwner = Space;
+    Table = MiArchMapTableFrame(Arch, Frame, 0);
     for (Index = 0; Index < Pages; Index++)
         MiArchPteWrite(&Table[Index], MiArchPteBlockToPage(Block, First + Index));
     MiArchUnmapFrame(Table);
-    MiPfnInitializePage(&System->Pfn, Frame,
-                        ((ULONG64)ParentFrame << PAGE_SHIFT) +
-                        MiPtIndex(Arch, VirtualAddress, 1) * sizeof(MI_PTE),
-                        ParentFrame, 0, MI_PFN_FLAG_PAGE_TABLE | MI_PFN_FLAG_PINNED);
-    System->Pfn.Pfn[Frame].PageTableOwner = Space;
     System->Pfn.Pfn[Frame].UsedEntries = (LONG)Pages;
     MI_ATOMIC_ADD64(&Space->PageTablePages, 1);
     MiArchWriteBootPte(AliasSlot, MiArchPteMakeTable(Frame, MiArchPteIsUser(Block) ? MI_LEAF_USER : 0));
@@ -270,25 +276,36 @@ MiPtVirtualAddressFromSlot(
     const MI_ARCH_DESCRIPTOR *Arch = Space->System->Arch;
     PMI_PFN_DATABASE Db = &Space->System->Pfn;
     ULONG64 Va = 0;
-    ULONG Level;
+    ULONG Level, RootPages = MiArchRootPageCount(Arch);
 
     for (Level = 0; Level < Arch->PagingLevels; Level++)
     {
         ULONG64 Frame = SlotAddress >> Arch->PageShift;
 
-        Va |= ((SlotAddress & (Arch->PageSize - 1)) / Arch->PteBytes) << Arch->Level[Level].Shift;
-
-        if (Frame == Space->RootFrame)
+        if (Frame >= Space->RootFrame && Frame - Space->RootFrame < RootPages)
         {
+            ULONG64 Offset = SlotAddress - ((ULONG64)Space->RootFrame << Arch->PageShift);
+
             if (Level != (ULONG)Arch->PagingLevels - 1)
                 return FALSE;
+            if (Offset < Arch->TablePrefixBytes[Level]) return FALSE;
+            Offset -= Arch->TablePrefixBytes[Level];
+            if ((Offset % Arch->PteBytes) || Offset / Arch->PteBytes >= Arch->Level[Level].EntryCount)
+                return FALSE;
+            Va |= (Offset / Arch->PteBytes) << Arch->Level[Level].Shift;
 
-            if (Space->IsSystem)
-                Va |= ~((1ULL << Arch->VirtualAddressBits) - 1);
+            if (Space->IsSystem && Arch->VirtualAddressBits < 64)
+                Va |= Arch->SystemAddressStart & (~0ULL << Arch->VirtualAddressBits);
 
             *VirtualAddress = Va;
             return TRUE;
         }
+
+        ULONG64 Offset = SlotAddress & (Arch->PageSize - 1);
+        if (Offset < Arch->TablePrefixBytes[Level]) return FALSE;
+        Offset -= Arch->TablePrefixBytes[Level];
+        if (Offset % Arch->PteBytes || Offset / Arch->PteBytes >= Arch->Level[Level].EntryCount) return FALSE;
+        Va |= (Offset / Arch->PteBytes) << Arch->Level[Level].Shift;
 
         if (Frame >= Db->FrameCount || !(MI_PFN_FLAGS(&Db->Pfn[Frame]) & MI_PFN_FLAG_PAGE_TABLE))
             return FALSE;
@@ -333,7 +350,7 @@ MiPtReleaseTable(
             if (Space->EmptyTable[i].Present && Space->EmptyTable[i].Frame == TableFrame)
                 Space->EmptyTable[i].Present = FALSE;
         }
-        ParentSlot = (PMI_PTE)((PUCHAR)MiArchMapFrame(Parent) + (Table->PteAddress & (PAGE_SIZE - 1)));
+        ParentSlot = (PMI_PTE)((PUCHAR)MiArchMapFrame(Table->PteAddress >> PAGE_SHIFT) + (Table->PteAddress & (PAGE_SIZE - 1)));
         MiArchPteWrite(ParentSlot, 0);
         MI_ATOMIC_ADD64(&Space->PageTablePages, -1);
         MI_ATOMIC_ADD32(&System->Pfn.Pfn[Parent].UsedEntries, -1);
@@ -412,7 +429,7 @@ MiPtPruneEmpty(
 
     for (Level = Arch->PagingLevels - 1; Level >= 1; Level--)
     {
-        PMI_PTE Slot = (PMI_PTE)MiArchMapFrame(Frame) + MiPtIndex(Arch, VirtualAddress, Level);
+        PMI_PTE Slot = (PMI_PTE)MiArchMapTableFrame(Arch, Frame, Level) + MiPtIndex(Arch, VirtualAddress, Level);
         MI_PTE Pte = MiArchPteRead(Slot);
         ULONG Child;
 
@@ -544,7 +561,7 @@ MiPtCheckTable(
     _Inout_ PULONG64 Tables)
 {
     const MI_ARCH_DESCRIPTOR *Arch = Space->System->Arch;
-    PMI_PTE Table = MiArchMapFrame(Frame);
+    PMI_PTE Table = MiArchMapTableFrame(Arch, Frame, Level);
     ULONG Entries = (ULONG)Arch->Level[Level].EntryCount;
     ULONG Errors = 0;
     LONG Used = 0;

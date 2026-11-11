@@ -36,7 +36,6 @@ KeFindConfigurationNextEntry(
 
 static ACPI_TABLE_RSDP *AcpiLoaderRsdp = NULL;
 
-#if defined(_M_ARM64)
 static
 BOOLEAN
 AcpiGetLoaderRsdpMapping(
@@ -89,7 +88,6 @@ AcpiIsLoaderRsdpMapping(
     Offset = Address - Base;
     return ((ULONGLONG)Length <= sizeof(*AcpiLoaderRsdp) - Offset);
 }
-#endif
 
 static
 UCHAR
@@ -362,10 +360,8 @@ AcpiOsMapMemory (
 
     DPRINT("AcpiOsMapMemory(phys 0x%p  size 0x%X)\n", phys, length);
 
-#if defined(_M_ARM64)
     if (AcpiGetLoaderRsdpMapping(phys, length, &Ptr))
         return Ptr;
-#endif
 
     /* ACPI tables can reside above 4 GB on amd64, so keep the full address. */
     Address.QuadPart = (ULONGLONG)phys;
@@ -408,10 +404,8 @@ AcpiOsUnmapMemory (
 
     ASSERT(virt);
 
-#if defined(_M_ARM64)
     if (AcpiIsLoaderRsdpMapping(virt, length))
         return;
-#endif
 
     MmUnmapIoSpace(virt, length);
 }

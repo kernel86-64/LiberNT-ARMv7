@@ -67,9 +67,14 @@ typedef ULONG MI_PTE, *PMI_PTE;
 typedef ULONG64 MI_PTE, *PMI_PTE;
 #endif
 
-#define MI_SOFT_KIND_SHIFT        1
+#ifndef MI_ARCH_SOFTWARE_PTE_BITS
+#define MI_ARCH_SOFTWARE_PTE_BITS 64
+#endif
+
+#define MI_SOFT_COMPACT           (sizeof(MI_PTE) == 4 || MI_ARCH_SOFTWARE_PTE_BITS == 32)
+#define MI_SOFT_KIND_SHIFT        (MI_SOFT_COMPACT ? 2 : 1)
 #define MI_SOFT_KIND_MASK         0x7ULL
-#define MI_SOFT_PROT_SHIFT        4
+#define MI_SOFT_PROT_SHIFT        (MI_SOFT_COMPACT ? 7 : 4)
 #define MI_SOFT_PROT_MASK         0x1FULL
 #define MI_SOFT_FILE_SHIFT        9
 #define MI_SOFT_FILE_MASK         0x7ULL
@@ -91,7 +96,9 @@ FORCEINLINE
 MI_PTE
 MiSoftMake(_In_ MI_SOFT_KIND Kind, _In_ ULONG Protection, _In_ ULONG64 Value)
 {
-    return ((ULONG64)Kind << MI_SOFT_KIND_SHIFT) |
+    ULONG Tag = MI_SOFT_COMPACT && Kind == MiSoftPageFile ? 8 : (ULONG)Kind;
+
+    return ((ULONG64)Tag << MI_SOFT_KIND_SHIFT) |
            (((ULONG64)Protection & MI_SOFT_PROT_MASK) << MI_SOFT_PROT_SHIFT) |
            (Value << MI_SOFT_VALUE_SHIFT);
 }
@@ -100,6 +107,11 @@ FORCEINLINE
 MI_SOFT_KIND
 MiSoftKind(_In_ MI_PTE Pte)
 {
+    if (MI_SOFT_COMPACT)
+    {
+        ULONG Tag = (ULONG)((Pte >> 2) & 31);
+        return Tag >= 16 ? MiSoftResident : (Tag >= 8 ? MiSoftPageFile : (MI_SOFT_KIND)Tag);
+    }
     return (MI_SOFT_KIND)((Pte >> MI_SOFT_KIND_SHIFT) & MI_SOFT_KIND_MASK);
 }
 
@@ -131,7 +143,29 @@ FORCEINLINE
 ULONG
 MiSoftFile(_In_ MI_PTE Pte)
 {
+    if (MI_SOFT_COMPACT)
+    {
+        ULONG Tag = (ULONG)((Pte >> 2) & 31);
+        return Tag >= 8 ? Tag & 7 : 0;
+    }
     return (ULONG)((Pte >> MI_SOFT_FILE_SHIFT) & MI_SOFT_FILE_MASK);
+}
+
+FORCEINLINE
+MI_PTE
+MiSoftWithFile(_In_ MI_PTE Pte, _In_ ULONG File)
+{
+    File &= MI_SOFT_FILE_MASK;
+    if (MI_SOFT_COMPACT)
+    {
+        MI_SOFT_KIND Kind = MiSoftKind(Pte);
+        ULONG Tag;
+
+        Tag = (Kind == MiSoftPageFile ? 8 : 16) | File;
+        return (Pte & ~(MI_PTE)(31u << 2)) | ((MI_PTE)Tag << 2);
+    }
+    return (Pte & ~((MI_PTE)MI_SOFT_FILE_MASK << MI_SOFT_FILE_SHIFT)) |
+           ((MI_PTE)File << MI_SOFT_FILE_SHIFT);
 }
 
 FORCEINLINE

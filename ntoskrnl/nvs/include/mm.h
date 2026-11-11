@@ -151,6 +151,8 @@ VOID MiPtCacheEmpty(_Inout_ PMI_ADDRESS_SPACE Space, _In_ ULONG TableFrame, _In_
 VOID MiPtWrite(_Inout_ PMI_ADDRESS_SPACE Space, _In_ ULONG64 VirtualAddress, _Inout_ PMI_PTE Slot,
                _In_ ULONG TableFrame, _In_ MI_PTE Value);
 ULONG64 MiPtSlotAddress(_In_ PMI_PTE Slot, _In_ ULONG TableFrame, _In_ ULONG64 VirtualAddress);
+ULONG64 MiPtSlotAddressAtLevel(_In_ const MI_ARCH_DESCRIPTOR *Arch, _In_ ULONG TableFrame,
+                               _In_ ULONG64 VirtualAddress, _In_ ULONG Level);
 ULONG64 MiPtNextTableBoundary(_In_ PMI_ADDRESS_SPACE Space, _In_ ULONG64 VirtualAddress);
 BOOLEAN MiPtVirtualAddressFromSlot(_In_ PMI_ADDRESS_SPACE Space, _In_ ULONG64 SlotAddress,
                                    _Out_ PULONG64 VirtualAddress);

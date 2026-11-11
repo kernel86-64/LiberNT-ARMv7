@@ -66,7 +66,47 @@ typedef struct _MI_ARCH_DESCRIPTOR
     BOOLEAN SupportsEcCode;
     ULONG64 DirectFrameCount;
     BOOLEAN PrefersRegionRotation;
+    ULONG TablePrefixBytes[MI_MAX_PAGING_LEVELS];
 } MI_ARCH_DESCRIPTOR, *PMI_ARCH_DESCRIPTOR;
+
+static __inline ULONG
+MiArchRootPageCount(const MI_ARCH_DESCRIPTOR *Arch)
+{
+    ULONG64 Bytes;
+    ULONG Pages;
+
+    if (Arch == NULL || Arch->PagingLevels == 0 || Arch->PagingLevels > MI_MAX_PAGING_LEVELS ||
+        Arch->PageSize == 0 || (Arch->PteBytes != 4 && Arch->PteBytes != 8) ||
+        Arch->Level[Arch->PagingLevels - 1].EntryCount > (ULONG64)(~(ULONG)0) / Arch->PteBytes)
+        return 0;
+    Bytes = Arch->Level[Arch->PagingLevels - 1].EntryCount * Arch->PteBytes +
+            Arch->TablePrefixBytes[Arch->PagingLevels - 1];
+    if (Bytes > (ULONG64)(~(ULONG)0) - Arch->PageSize + 1) return 0;
+    Pages = (ULONG)((Bytes + Arch->PageSize - 1) / Arch->PageSize);
+    if (!Pages) return 0;
+    ULONG Rounded = 1;
+    while (Rounded < Pages)
+    {
+        if (Rounded > (~(ULONG)0) / 2) return 0;
+        Rounded <<= 1;
+    }
+    return Rounded;
+}
+
+PVOID MiArchMapFrame(ULONG64 Frame);
+
+static __inline PVOID
+MiArchMapTableFrame(const MI_ARCH_DESCRIPTOR *Arch, ULONG64 Frame, ULONG Level)
+{
+    PUCHAR Mapping = MiArchMapFrame(Frame);
+    return Mapping ? Mapping + Arch->TablePrefixBytes[Level] : NULL;
+}
+
+static __inline ULONG64
+MiArchTableSlotAddress(const MI_ARCH_DESCRIPTOR *Arch, ULONG64 Frame, ULONG Index, ULONG Level)
+{
+    return (Frame << Arch->PageShift) + Arch->TablePrefixBytes[Level] + (ULONG64)Index * Arch->PteBytes;
+}
 
 typedef struct _MI_PHYSICAL_RANGE
 {

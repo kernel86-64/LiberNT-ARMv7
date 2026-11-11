@@ -14,10 +14,57 @@ static DECLSPEC_ALIGN(8) UCHAR SwitchStack[16384];
 static DECLSPEC_ALIGN(8) UCHAR SwitchLargeStack[16384];
 static volatile ULONG SwitchSteps, SwitchResumes, SwitchFailures;
 KTHREAD ArmSwitchMainThread;
+BOOLEAN MiArmShortDescriptors;
 
 static DECLSPEC_ALIGN(8) UCHAR CalloutStack[KERNEL_LARGE_STACK_SIZE];
 static BOOLEAN CalloutAllocationFailure;
 static ULONG CalloutAllocations, CalloutReleases;
+extern PVOID ArmGrowStackPointer;
+extern ULONG ArmGrowStackCalls;
+extern NTSTATUS ArmGrowStackStatus;
+NTSTATUS KiArmGrowKernelFaultStack(ULONG_PTR StackPointer);
+
+static BOOLEAN SwitchFaultStack(VOID)
+{
+    ULONG_PTR Low = SwitchWorker.StackLimit;
+    BOOLEAN Passed;
+
+    ArmGrowStackPointer = (PVOID)(Low + PAGE_SIZE);
+    ArmGrowStackCalls = 0;
+    ArmGrowStackStatus = STATUS_NO_MEMORY;
+    SwitchWorker.LargeStack = FALSE;
+    Passed = NT_SUCCESS(KiArmGrowKernelFaultStack(Low + PAGE_SIZE)) && !ArmGrowStackCalls;
+    SwitchWorker.LargeStack = TRUE;
+    Passed = NT_SUCCESS(KiArmGrowKernelFaultStack(Low - 1)) && Passed;
+    Passed = NT_SUCCESS(KiArmGrowKernelFaultStack((ULONG_PTR)SwitchWorker.StackBase + 1)) && Passed;
+    Passed = NT_SUCCESS(KiArmGrowKernelFaultStack(Low + KERNEL_STACK_SIZE)) && !ArmGrowStackCalls && Passed;
+    SwitchPcr.CurrentIrql = DISPATCH_LEVEL;
+    Passed = NT_SUCCESS(KiArmGrowKernelFaultStack(Low + PAGE_SIZE)) && !ArmGrowStackCalls && Passed;
+    SwitchPcr.CurrentIrql = PASSIVE_LEVEL;
+    Passed = KiArmGrowKernelFaultStack(Low + PAGE_SIZE) == STATUS_NO_MEMORY && ArmGrowStackCalls == 1 && Passed;
+    ArmGrowStackStatus = STATUS_SUCCESS;
+    Passed = NT_SUCCESS(KiArmGrowKernelFaultStack(Low + PAGE_SIZE)) && ArmGrowStackCalls == 2 && Passed;
+    ArmGrowStackPointer = NULL;
+    SwitchWorker.LargeStack = FALSE;
+    return Passed;
+}
+
+static BOOLEAN SwitchInterruptState(VOID)
+{
+    ULONG Original, Disabled, Restored;
+    BOOLEAN Outer, Inner, Passed;
+
+    __asm__ __volatile__("mrs %0, cpsr\n\tcpsie i" : "=r"(Original) :: "memory");
+    Outer = KeDisableInterrupts();
+    Inner = KeDisableInterrupts();
+    KeRestoreInterrupts(Inner);
+    __asm__ __volatile__("mrs %0, cpsr" : "=r"(Disabled));
+    KeRestoreInterrupts(Outer);
+    __asm__ __volatile__("mrs %0, cpsr" : "=r"(Restored));
+    Passed = Outer && !Inner && (Disabled & 0x80) && !(Restored & 0x80);
+    __asm__ __volatile__("msr cpsr_c, %0" :: "r"(Original) : "memory");
+    return Passed;
+}
 
 NTSTATUS MiAllocateKernelCalloutStack(BOOLEAN Wait, PVOID *StackBase, PVOID *StackLimit)
 {
@@ -204,7 +251,7 @@ static VOID NTAPI SwitchWorkerSystem(PKSTART_ROUTINE Entry, PVOID Parameter)
 BOOLEAN ArmTestKernelSwitch(VOID)
 {
     ULONG Pcr, Cpsr, Teb;
-    BOOLEAN Passed = TRUE;
+    BOOLEAN Passed = SwitchInterruptState();
     ULONG Index;
     SIZE_T FrameSize = sizeof(KSWITCH_FRAME) + sizeof(KEXCEPTION_FRAME) + sizeof(KARM_VFP_STATE);
 
@@ -225,6 +272,8 @@ BOOLEAN ArmTestKernelSwitch(VOID)
     __asm__ __volatile__("mrc p15, 0, %0, c13, c0, 4" : "=r"(Pcr));
     __asm__ __volatile__("mrc p15, 0, %0, c13, c0, 2" : "=r"(Teb));
     __asm__ __volatile__("mcr p15, 0, %0, c13, c0, 4\n\tisb" :: "r"(&SwitchPcr) : "memory");
+    SwitchPcr.Prcb.CurrentThread = &SwitchWorker;
+    Passed = SwitchFaultStack() && Passed;
     SwitchPcr.Prcb.GroupSetMember = 1;
     SwitchOldProcess.DirectoryTableBase = SwitchNewProcess.DirectoryTableBase = PAGE_SIZE;
     SwitchOldProcess.ActiveProcessors = 1;

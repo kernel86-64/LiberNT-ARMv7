@@ -7,7 +7,11 @@
 
 #include <hal.h>
 #include <armvirt.h>
+#include <reactos/arm/exynos4boot.h>
+#include <reactos/arm/exynos4mct.h>
+#include <reactos/arm/exynos4rtc.h>
 #include <hal/acpi_pci.h>
+#define HALP_ARM_HW_REDUCED_ACPI (1UL << 20)
 #undef DbgPrint
 #undef KeGetCurrentIrql
 #undef READ_PORT_UCHAR
@@ -23,11 +27,40 @@ static ULONG HalpInterruptToken;
 static ULONG HalpTimerFrequency;
 static ULONG HalpTimerIncrement;
 static ULONGLONG HalpTimerDeadline;
+static BOOLEAN HalpExynos;
+
+static ULONG HalpClockVector(VOID)
+{
+    return HalpExynos ? EXYNOS_MCT_VECTOR : ARM_VIRT_TIMER_VECTOR;
+}
+
+ULONG NTAPI HalpQueryReservedResources(PCM_PARTIAL_RESOURCE_DESCRIPTOR Descriptor)
+{
+    if (!HalpExynos) return 0;
+    if (Descriptor)
+    {
+        RtlZeroMemory(Descriptor, sizeof(*Descriptor));
+        Descriptor->Type = CmResourceTypeInterrupt;
+        Descriptor->ShareDisposition = CmResourceShareDeviceExclusive;
+        Descriptor->Flags = CM_RESOURCE_INTERRUPT_LEVEL_SENSITIVE;
+        Descriptor->u.Interrupt.Level = HalpClockVector();
+        Descriptor->u.Interrupt.Vector = HalpClockVector();
+        Descriptor->u.Interrupt.Affinity = 1;
+    }
+    return 1;
+}
 
 VOID FASTCALL KeUpdateSystemTime(PKTRAP_FRAME TrapFrame, ULONG Increment, KIRQL Irql);
 
 static VOID HalpSetTimerDeadline(ULONGLONG Deadline)
 {
+    if (HalpExynos)
+    {
+        ULONG Period = max((ULONGLONG)HalpTimerFrequency * HalpTimerIncrement / 10000000, 1);
+        if (!ExynosMctComparator(EXYNOS_MCT_VIRTUAL, Deadline, Period))
+            KeBugCheckEx(HAL_INITIALIZATION_FAILED, EXYNOS_MCT_PHYSICAL, 0x240, 0, 0);
+        return;
+    }
     __asm__ __volatile__("mcrr p15, 3, %0, %1, c14\n\tisb" ::
                          "r" ((ULONG)Deadline), "r" ((ULONG)(Deadline >> 32)) : "memory");
 }
@@ -85,7 +118,7 @@ KIRQL NTAPI KeRaiseIrqlToSynchLevel(VOID) { return KfRaiseIrql(DISPATCH_LEVEL); 
 VOID NTAPI HalInitializeProcessor(ULONG ProcessorNumber, PLOADER_PARAMETER_BLOCK LoaderBlock)
 {
     ULONG Index;
-    UNREFERENCED_PARAMETER(LoaderBlock);
+    HalpExynos = ExynosBootLogMapped();
     if (ProcessorNumber != 0)
         KeBugCheckEx(HAL_INITIALIZATION_FAILED, ProcessorNumber, 0, 0, 0);
     HalpWrite(ARM_VIRT_GIC_CPU_VIRTUAL, 0, 0);
@@ -111,20 +144,39 @@ BOOLEAN NTAPI HalInitSystem(ULONG BootPhase, PLOADER_PARAMETER_BLOCK LoaderBlock
     if (BootPhase > 1)
         return FALSE;
     if (BootPhase == 0)
+    {
+        HalGetDmaAdapter = HalpArmGetDmaAdapter;
         KeSetTimeIncrement(100000, 10000);
+        if (HalpExynos)
+        {
+            PFADT Fadt;
+            if (!NT_SUCCESS(HalpAcpiTableCacheInit(LoaderBlock))) return FALSE;
+            Fadt = HalAcpiGetTable(LoaderBlock, FADT_SIGNATURE);
+            if (!Fadt || Fadt->Header.Length < RTL_SIZEOF_THROUGH_FIELD(FADT, flags) ||
+                !(Fadt->flags & HALP_ARM_HW_REDUCED_ACPI)) return FALSE;
+            HalGetCachedAcpiTable = HaliGetCachedAcpiTable;
+            HalInitPnpDriver = HaliInitPnpDriver;
+        }
+    }
     else
     {
         ULONG Control = 1;
-        __asm__ __volatile__("mrc p15, 0, %0, c14, c0, 0" : "=r" (HalpTimerFrequency));
+        if (HalpExynos && !NT_SUCCESS(HalpExynosInitializeCacheRanges(LoaderBlock)))
+            return FALSE;
+        if (HalpExynos)
+            HalpTimerFrequency = EXYNOS_MCT_RATE;
+        else
+            __asm__ __volatile__("mrc p15, 0, %0, c14, c0, 0" : "=r" (HalpTimerFrequency));
         if (!HalpTimerFrequency)
             return FALSE;
         HalpTimerIncrement = HalpIncrement;
         HalpTimerDeadline = KeQueryPerformanceCounter(NULL).QuadPart +
                            (ULONGLONG)HalpTimerFrequency * HalpTimerIncrement / 10000000;
         HalpSetTimerDeadline(HalpTimerDeadline);
-        if (!HalEnableSystemInterrupt(ARM_VIRT_TIMER_VECTOR, CLOCK_LEVEL, LevelSensitive))
+        if (!HalEnableSystemInterrupt(HalpClockVector(), CLOCK_LEVEL, LevelSensitive))
             return FALSE;
-        __asm__ __volatile__("mcr p15, 0, %0, c14, c3, 1\n\tisb" :: "r" (Control) : "memory");
+        if (!HalpExynos)
+            __asm__ __volatile__("mcr p15, 0, %0, c14, c3, 1\n\tisb" :: "r" (Control) : "memory");
     }
     return TRUE;
 }
@@ -156,22 +208,25 @@ KIRQL NTAPI HalpArmGetInterruptIrql(ULONG Source)
         return DISPATCH_LEVEL;
     if (Source == 1)
         return APC_LEVEL;
-    return Source == ARM_VIRT_TIMER_VECTOR ? CLOCK_LEVEL : 5;
+    return Source == HalpClockVector() ? CLOCK_LEVEL : 5;
 }
 
 BOOLEAN NTAPI HalpArmDispatchInterrupt(ULONG Source, PKTRAP_FRAME TrapFrame)
 {
     ULONGLONG Now, Period, Elapsed, Remaining;
     ULONG Increment;
+    BOOLEAN Rearm;
 
-    if (Source != ARM_VIRT_TIMER_VECTOR)
+    if (Source != HalpClockVector())
         return FALSE;
+    if (HalpExynos) ExynosMctAcknowledge(EXYNOS_MCT_VIRTUAL);
     Now = KeQueryPerformanceCounter(NULL).QuadPart;
     Period = max((ULONGLONG)HalpTimerFrequency * HalpTimerIncrement / 10000000, 1);
     Elapsed = (LONG64)(Now - HalpTimerDeadline) >= 0 ?
               (Now - HalpTimerDeadline) / Period + 1 : 1;
     Remaining = Elapsed * HalpTimerIncrement;
     HalpTimerDeadline += Elapsed * Period;
+    Rearm = !HalpExynos || HalpTimerIncrement != HalpIncrement;
     if (HalpTimerIncrement != HalpIncrement)
     {
         HalpTimerIncrement = HalpIncrement;
@@ -184,8 +239,11 @@ BOOLEAN NTAPI HalpArmDispatchInterrupt(ULONG Source, PKTRAP_FRAME TrapFrame)
         KeUpdateSystemTime(TrapFrame, Increment, TrapFrame->PreviousIrql);
         Remaining -= Increment;
     }
-    Now = KeQueryPerformanceCounter(NULL).QuadPart;
-    HalpSetTimerDeadline((LONG64)(Now - HalpTimerDeadline) >= 0 ? Now + Period : HalpTimerDeadline);
+    if (Rearm)
+    {
+        Now = KeQueryPerformanceCounter(NULL).QuadPart;
+        HalpSetTimerDeadline((LONG64)(Now - HalpTimerDeadline) >= 0 ? Now + Period : HalpTimerDeadline);
+    }
     return TRUE;
 }
 
@@ -236,6 +294,12 @@ LARGE_INTEGER NTAPI KeQueryPerformanceCounter(PLARGE_INTEGER Frequency)
 {
     LARGE_INTEGER Value;
     ULONG Low, High, Rate;
+    if (HalpExynos)
+    {
+        Value.QuadPart = ExynosMctCounter(EXYNOS_MCT_VIRTUAL);
+        if (Frequency) Frequency->QuadPart = EXYNOS_MCT_RATE;
+        return Value;
+    }
     __asm__ __volatile__("isb\n\tmrrc p15, 1, %0, %1, c14" : "=r" (Low), "=r" (High));
     Value.QuadPart = (ULONGLONG)High << 32 | Low;
     if (Frequency)
@@ -296,10 +360,89 @@ VOID FASTCALL HalSweepDcache(VOID)
     __asm__ __volatile__("mcr p15, 2, %0, c0, c0, 0\n\tdsb sy\n\tisb" :: "r" (Operand) : "memory");
 }
 
+static BOOLEAN HalpExynosRtcQuery(PTIME_FIELDS Time)
+{
+    ULONG Attempt, FirstSecond, LastSecond, RawMinute, RawHour;
+    ULONG RawDate, RawMonth, RawYear;
+    unsigned int RawSecond, Second, Minute, Hour, Date, Month, Century;
+    TIME_FIELDS Fields;
+    LARGE_INTEGER Value;
+
+    for (Attempt = 0; Attempt < 4; Attempt++)
+    {
+        FirstSecond = ExynosRtcRead(ARM_VIRT_RTC_VIRTUAL, EXYNOS_RTC_BCDSEC);
+        RawMinute = ExynosRtcRead(ARM_VIRT_RTC_VIRTUAL, EXYNOS_RTC_BCDMIN);
+        RawHour = ExynosRtcRead(ARM_VIRT_RTC_VIRTUAL, EXYNOS_RTC_BCDHOUR);
+        RawDate = ExynosRtcRead(ARM_VIRT_RTC_VIRTUAL, EXYNOS_RTC_BCDDATE);
+        RawMonth = ExynosRtcRead(ARM_VIRT_RTC_VIRTUAL, EXYNOS_RTC_BCDMON);
+        RawYear = ExynosRtcRead(ARM_VIRT_RTC_VIRTUAL, EXYNOS_RTC_BCDYEAR);
+        LastSecond = ExynosRtcRead(ARM_VIRT_RTC_VIRTUAL, EXYNOS_RTC_BCDSEC);
+        if (FirstSecond == LastSecond) break;
+    }
+    if (Attempt == 4) return FALSE;
+
+    RawSecond = FirstSecond;
+    if (!ExynosRtcBcdToBinary(RawSecond, &Second) ||
+        !ExynosRtcBcdToBinary(RawMinute, &Minute) ||
+        !ExynosRtcBcdToBinary(RawHour, &Hour) ||
+        !ExynosRtcBcdToBinary(RawDate, &Date) ||
+        !ExynosRtcBcdToBinary(RawMonth, &Month) ||
+        !ExynosRtcBcdToBinary(RawYear & 0xff, &RawSecond) ||
+        !ExynosRtcBcdToBinary((RawYear >> 8) & 0xf, &Century))
+        return FALSE;
+
+    RtlZeroMemory(&Fields, sizeof(Fields));
+    Fields.Year = 1900 + Century * 100 + RawSecond;
+    Fields.Month = (USHORT)Month;
+    Fields.Day = (USHORT)Date;
+    Fields.Hour = (USHORT)Hour;
+    Fields.Minute = (USHORT)Minute;
+    Fields.Second = (USHORT)Second;
+    if (!RtlTimeFieldsToTime(&Fields, &Value)) return FALSE;
+    RtlTimeToTimeFields(&Value, Time);
+    return TRUE;
+}
+
+static BOOLEAN HalpExynosRtcSet(PTIME_FIELDS Time)
+{
+    TIME_FIELDS Fields = *Time;
+    LARGE_INTEGER Value;
+    ULONG Control, Year;
+
+    if (!RtlTimeFieldsToTime(Time, &Value)) return FALSE;
+    RtlTimeToTimeFields(&Value, &Fields);
+    if (Fields.Year < 1900 || Fields.Year > 2899) return FALSE;
+    Year = Fields.Year - 1900;
+
+    Control = ExynosRtcRead(ARM_VIRT_RTC_VIRTUAL, EXYNOS_RTC_RTCCON);
+    if (!(Control & EXYNOS_RTC_ENABLE))
+        ExynosRtcWrite(ARM_VIRT_RTC_VIRTUAL, EXYNOS_RTC_RTCCON, Control | EXYNOS_RTC_ENABLE);
+
+    ExynosRtcWrite(ARM_VIRT_RTC_VIRTUAL, EXYNOS_RTC_BCDYEAR,
+                   ExynosRtcBinaryToBcd(Year % 100) |
+                   (ExynosRtcBinaryToBcd(Year / 100) << 8));
+    ExynosRtcWrite(ARM_VIRT_RTC_VIRTUAL, EXYNOS_RTC_BCDMON,
+                   ExynosRtcBinaryToBcd(Fields.Month));
+    ExynosRtcWrite(ARM_VIRT_RTC_VIRTUAL, EXYNOS_RTC_BCDDATE,
+                   ExynosRtcBinaryToBcd(Fields.Day));
+    ExynosRtcWrite(ARM_VIRT_RTC_VIRTUAL, EXYNOS_RTC_BCDDAY,
+                   ExynosRtcBinaryToBcd(Fields.Weekday));
+    ExynosRtcWrite(ARM_VIRT_RTC_VIRTUAL, EXYNOS_RTC_BCDHOUR,
+                   ExynosRtcBinaryToBcd(Fields.Hour));
+    ExynosRtcWrite(ARM_VIRT_RTC_VIRTUAL, EXYNOS_RTC_BCDMIN,
+                   ExynosRtcBinaryToBcd(Fields.Minute));
+    ExynosRtcWrite(ARM_VIRT_RTC_VIRTUAL, EXYNOS_RTC_BCDSEC,
+                   ExynosRtcBinaryToBcd(Fields.Second));
+    return TRUE;
+}
+
 BOOLEAN NTAPI HalQueryRealTimeClock(PTIME_FIELDS Time)
 {
     LARGE_INTEGER Value;
-    RtlSecondsSince1970ToTime(HalpRead(ARM_VIRT_RTC_VIRTUAL, 0), &Value);
+    if (HalpExynos)
+        return HalpExynosRtcQuery(Time);
+    else
+        RtlSecondsSince1970ToTime(HalpRead(ARM_VIRT_RTC_VIRTUAL, 0), &Value);
     RtlTimeToTimeFields(&Value, Time);
     return TRUE;
 }
@@ -308,6 +451,7 @@ BOOLEAN NTAPI HalSetRealTimeClock(PTIME_FIELDS Time)
 {
     LARGE_INTEGER Value;
     ULONG Seconds;
+    if (HalpExynos) return HalpExynosRtcSet(Time);
     if (!RtlTimeFieldsToTime(Time, &Value) || !RtlTimeToSecondsSince1970(&Value, &Seconds))
         return FALSE;
     HalpWrite(ARM_VIRT_RTC_VIRTUAL, 8, Seconds);
@@ -359,7 +503,8 @@ ULONG NTAPI HalGetInterruptVector(INTERFACE_TYPE Type, ULONG Bus, ULONG Level, U
                                   PKIRQL Irql, PKAFFINITY Affinity)
 {
     UNREFERENCED_PARAMETER(Bus); UNREFERENCED_PARAMETER(Level);
-    if (Type != Internal || Vector < 32 || Vector >= HalpInterruptCount)
+    if ((Type != Internal && Type != PNPBus && Type != ACPIBus) ||
+        Vector < 32 || Vector >= HalpInterruptCount)
         return 0;
     *Irql = 5;
     *Affinity = 1;
@@ -370,7 +515,7 @@ BOOLEAN NTAPI HalTranslateBusAddress(INTERFACE_TYPE Type, ULONG Bus, PHYSICAL_AD
                                     PULONG AddressSpace, PPHYSICAL_ADDRESS Translated)
 {
     UNREFERENCED_PARAMETER(Bus);
-    if (Type != Internal || *AddressSpace != 0)
+    if ((Type != Internal && Type != PNPBus && Type != ACPIBus) || *AddressSpace != 0)
         return FALSE;
     *Translated = Address;
     return TRUE;
@@ -440,9 +585,8 @@ NTSTATUS NTAPI HalGetMessageRoutingInfo(PHAL_MESSAGE_ROUTING_INFO Information)
 NTSTATUS NTAPI HalGetMemoryCachingRequirements(PHYSICAL_ADDRESS Address, SIZE_T Length,
                                                MEMORY_CACHING_TYPE *CacheType)
 {
-    UNREFERENCED_PARAMETER(Address);
-    UNREFERENCED_PARAMETER(Length);
     if (!CacheType) return STATUS_INVALID_PARAMETER;
+    if (HalpExynos) return HalpExynosMemoryCachingRequirements(Address, Length, CacheType);
     *CacheType = MmNonCached;
     return STATUS_NOT_SUPPORTED;
 }

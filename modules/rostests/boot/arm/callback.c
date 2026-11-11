@@ -9,6 +9,9 @@
 
 static DECLSPEC_ALIGN(8) UCHAR CallbackUserStack[8192];
 static ULONG CallbackFailures, CallbackCalls;
+PVOID ArmGrowStackPointer;
+ULONG ArmGrowStackCalls;
+NTSTATUS ArmGrowStackStatus;
 PVOID KeUserCallbackDispatcher = (PVOID)1;
 PVOID KeUserExceptionDispatcher = (PVOID)3;
 
@@ -24,9 +27,10 @@ static VOID NTAPI ArmCallbackProbe(PVOID Address, SIZE_T Length, ULONG Alignment
 
 NTSTATUS NTAPI MmGrowKernelStack(PVOID Stack)
 {
-    UNREFERENCED_PARAMETER(Stack);
-    KeBugCheck(KMODE_EXCEPTION_NOT_HANDLED);
-    return STATUS_UNSUCCESSFUL;
+    if (!ArmGrowStackPointer || Stack != ArmGrowStackPointer)
+        KeBugCheck(KMODE_EXCEPTION_NOT_HANDLED);
+    ++ArmGrowStackCalls;
+    return ArmGrowStackStatus;
 }
 
 static DECLSPEC_NORETURN VOID ArmCallbackExit(PKTRAP_FRAME Trap, PKEXCEPTION_FRAME Exception);

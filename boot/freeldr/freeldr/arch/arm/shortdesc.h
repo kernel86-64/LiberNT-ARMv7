@@ -10,12 +10,15 @@
 
 #define ARM_SD_ROOT_ENTRIES 4096u
 #define ARM_SD_TABLE_ENTRIES 256u
+#define ARM_SD_TABLE_BYTES 4096u
+#define ARM_SD_TABLE_WORDS (ARM_SD_TABLE_BYTES / sizeof(uint32_t))
 #define ARM_SD_READ_ONLY 1u
 #define ARM_SD_USER 2u
 #define ARM_SD_EXECUTE 4u
 #define ARM_SD_DEVICE 8u
 #define ARM_SD_WRITE_BACK 16u
 #define ARM_SD_NOT_GLOBAL 32u
+#define ARM_SD_NONSHAREABLE 64u
 
 typedef struct
 {

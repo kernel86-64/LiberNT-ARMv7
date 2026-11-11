@@ -10,11 +10,17 @@
     .text
     .globl ArmEnablePaging
     .thumb_func
+#ifndef ARM_PAGING_BARE_TEST
     .seh_proc ArmEnablePaging
+#endif
 ArmEnablePaging:
     push.w {r4-r10, lr}
+#ifndef ARM_PAGING_BARE_TEST
     .seh_save_regs_w {r4-r10, lr}
+#endif
+#ifndef ARM_PAGING_BARE_TEST
     .seh_endprologue
+#endif
     cpsid if
     mov r4, r0
     mrc p15, 1, r5, c0, c0, 1
@@ -65,6 +71,10 @@ ArmEnablePaging:
     bic r5, r5, #0x80000
     mcr p15, 0, r5, c1, c0, 0
     isb
+    mrc p15, 0, r0, c0, c1, 4
+    and r0, r0, #15
+    cmp r0, #5
+    blo .Lshort_descriptors
     ldr r0, =0x80803500
     mcr p15, 0, r0, c2, c0, 2
     ldr r0, =0x444400ff
@@ -72,6 +82,19 @@ ArmEnablePaging:
     movs r0, #0
     mcr p15, 0, r0, c10, c2, 1
     mcrr p15, 0, r4, r0, c2
+    b .Lpaging_registers_ready
+.Lshort_descriptors:
+    movs r0, #0
+    mcr p15, 0, r0, c2, c0, 2
+    mcr p15, 0, r0, c2, c0, 1
+    mcr p15, 0, r0, c13, c0, 1
+    mcr p15, 0, r4, c2, c0, 0
+    movs r1, #1
+    mcr p15, 0, r1, c3, c0, 0
+    bic r5, r5, #0x10000000
+    orr r5, r5, #0x20000000
+    orr r5, r5, #0x00800000
+.Lpaging_registers_ready:
     isb
     mcr p15, 0, r0, c8, c7, 0
     mcr p15, 0, r0, c7, c5, 0
@@ -83,8 +106,16 @@ ArmEnablePaging:
     orr r5, r5, #0x1800
     mcr p15, 0, r5, c1, c0, 0
     isb
+#ifndef ARM_PAGING_BARE_TEST
     .seh_startepilogue
+#endif
     pop.w {r4-r10, pc}
+#ifndef ARM_PAGING_BARE_TEST
     .seh_save_regs_w {r4-r10, lr}
+#endif
+#ifndef ARM_PAGING_BARE_TEST
     .seh_endepilogue
+#endif
+#ifndef ARM_PAGING_BARE_TEST
     .seh_endproc
+#endif

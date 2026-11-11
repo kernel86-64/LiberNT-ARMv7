@@ -376,8 +376,8 @@ MiSystemProtect(
         if (MI_PROT_IS_NOACCESS(Protection))
         {
             MiPtWrite(Space, Va, Slot, TableFrame,
-                      MiSoftMake(MiSoftResident, MI_PROT_NOACCESS, Frame) |
-                          ((ULONG64)(CacheFlags >> 3) << MI_SOFT_FILE_SHIFT));
+                      MiSoftWithFile(MiSoftMake(MiSoftResident, MI_PROT_NOACCESS, Frame),
+                                     CacheFlags >> 3));
         }
         else
         {

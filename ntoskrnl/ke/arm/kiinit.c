@@ -28,6 +28,7 @@ ULONG KeNumberProcessIds;
 ULONG KeNumberTbEntries;
 ULONG ProcessCount; // PERF
 VOID KiArmInstallVectors(VOID);
+VOID KiArmInitializeEarlyDebug(PLOADER_PARAMETER_BLOCK LoaderBlock);
 #define __ARMV6__ KeIsArmV6
 
 /* FUNCTIONS ******************************************************************/
@@ -337,6 +338,7 @@ KiInitializeSystem(IN PLOADER_PARAMETER_BLOCK LoaderBlock)
     PKIPCR Pcr = (PKIPCR)KeGetPcr();
     PKTHREAD Thread;
 
+    KiArmInitializeEarlyDebug(LoaderBlock);
     DbgPrintEarly("ARM kernel: KiInitializeSystem, LPB=%p PCR=%p\n", LoaderBlock, Pcr);
 
     /* Flush the TLB */

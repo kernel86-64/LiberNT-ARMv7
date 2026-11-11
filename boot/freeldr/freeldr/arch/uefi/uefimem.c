@@ -57,6 +57,23 @@ extern ULONG_PTR VramAddress;
 extern ULONG VramSize;
 
 EFI_MEMORY_DESCRIPTOR* EfiMemoryMap = NULL;
+static UINTN EfiMemoryMapBytes;
+static UINTN EfiMemoryMapStride;
+
+const EFI_MEMORY_DESCRIPTOR *
+UefiMemNextAcpiRange(PULONG Cursor)
+{
+    const EFI_MEMORY_DESCRIPTOR *Entry;
+    if (EfiMemoryMapStride < sizeof(*Entry)) return NULL;
+    while (*Cursor < EfiMemoryMapBytes / EfiMemoryMapStride)
+    {
+        Entry = (PVOID)((PUCHAR)EfiMemoryMap + (UINTN)(*Cursor)++ * EfiMemoryMapStride);
+        if (Entry->Type == EfiACPIReclaimMemory || Entry->Type == EfiACPIMemoryNVS)
+            return Entry;
+    }
+    return NULL;
+}
+
 UINT32 FreeldrDescCount;
 /* Usable FreeldrMem capacity, excluding the terminator slot. */
 static UINT32 FreeldrDescMax;
@@ -330,6 +347,8 @@ UefiMemGetMemoryMap(ULONG *MemoryMapSize)
     TRACE("Value of DescriptorVersion: %d\n", DescriptorVersion);
 
     EntryCount = (MapSize / DescriptorSize);
+    EfiMemoryMapBytes = MapSize;
+    EfiMemoryMapStride = DescriptorSize;
 
     /*
      * Splitting free EFI regions can produce more FreeLoader descriptors than
@@ -410,9 +429,8 @@ UefiMemGetMemoryMap(ULONG *MemoryMapSize)
                     }
                 }
             }
-            else if (MemoryType != LoaderReserve)
+            else if (MemoryType != LoaderReserve || MapEntry->Type == EfiReservedMemoryType)
             {
-                /* Preserve non-reserved firmware descriptors. */
                 UefiSetMemory(FreeldrMem, MapEntry->PhysicalStart, MapEntry->NumberOfPages, MemoryType);
             }
 

@@ -156,6 +156,7 @@ MiCreateLargeView(PMI_ADDRESS_SPACE Space, PULONG64 BaseAddress, PULONG64 Region
     for (Va = Start; Va < Start + Size; Va += Large)
     {
         ULONG Table, Frame, i;
+        ULONG64 SlotAddress;
         PMI_PTE Slot = MiPtEnsureLevel(Space, Va, Arch->LargePageLevel, &Table);
 
         if (Slot == NULL)
@@ -164,6 +165,7 @@ MiCreateLargeView(PMI_ADDRESS_SPACE Space, PULONG64 BaseAddress, PULONG64 Region
             break;
         }
         MI_ASSERT(MiArchPteRead(Slot) == 0);
+        SlotAddress = MiPtSlotAddressAtLevel(Arch, Table, Va, Arch->LargePageLevel);
         Frame = Segment != NULL ? Segment->LargeFrames[(SectionOffset + Va - Start) / Large]
                                 : MiPfnAllocateContiguous(Db, Pages, 0, Db->FrameCount - 1, Pages);
         if (Frame == MI_FRAME_INVALID)
@@ -176,7 +178,7 @@ MiCreateLargeView(PMI_ADDRESS_SPACE Space, PULONG64 BaseAddress, PULONG64 Region
             PVOID Mapping = MiArchMapFrame(Frame + i);
             RtlZeroMemory(Mapping, PAGE_SIZE);
             MiArchUnmapFrame(Mapping);
-            MiPfnInitializePage(Db, Frame + i, MiPtSlotAddress(Slot, Table, Va), Table,
+            MiPfnInitializePage(Db, Frame + i, SlotAddress, Table,
                                 MiSoftMake(MiSoftDemandZero, Protection, 0), 0);
         }
         MiPtWrite(Space, Va, Slot, Table, MI_PROT_IS_ACCESSIBLE(Protection)

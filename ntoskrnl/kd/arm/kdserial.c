@@ -9,6 +9,7 @@
 /* INCLUDES *******************************************************************/
 
 #include <ntoskrnl.h>
+#include <arm/exynos4boot.h>
 #if defined(_ARM_VIRT_)
 #include <armvirt.h>
 #define UART_BASE ((ULONG_PTR)ARM_VIRT_UART_VIRTUAL)
@@ -19,6 +20,16 @@
 #include <debug.h>
 
 /* GLOBALS ********************************************************************/
+
+static BOOLEAN KdExynosEarlyLog;
+
+VOID KiArmInitializeEarlyDebug(PLOADER_PARAMETER_BLOCK LoaderBlock)
+{
+    UNREFERENCED_PARAMETER(LoaderBlock);
+    KdExynosEarlyLog = ExynosBootLogMapped();
+    if (KdExynosEarlyLog)
+        ExynosBootMessage(EXYNOS_BOOT_LOG_VIRTUAL, "LiberNT kernel: entry reached\n");
+}
 
 CPPORT DefaultPort = {0, 0, 0};
 
@@ -43,6 +54,7 @@ NTAPI
 KdPortInitializeEx(IN PCPPORT PortInformation,
                    IN ULONG ComPortNumber)
 {
+    if (KdExynosEarlyLog) return TRUE;
     ULONG Divider, Remainder, Fraction;
     ULONG Baudrate = PortInformation->BaudRate;
 
@@ -96,6 +108,8 @@ KdPortGetByteEx(IN PCPPORT PortInformation,
 {
     ULONG Data;
 
+    if (KdExynosEarlyLog) return FALSE;
+
     UNREFERENCED_PARAMETER(PortInformation);
     if (READ_REGISTER_ULONG((PULONG)UART_PL01x_FR) & UART_PL01x_FR_RXFE)
         return FALSE;
@@ -114,6 +128,12 @@ NTAPI
 KdPortPutByteEx(IN PCPPORT PortInformation,
                 IN UCHAR ByteToSend)
 {
+    if (KdExynosEarlyLog)
+    {
+        ExynosBootWrite(EXYNOS_BOOT_LOG_VIRTUAL, (PCSTR)&ByteToSend, 1);
+        return;
+    }
+
     //
     // Wait for ready
     //
