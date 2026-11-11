@@ -37,30 +37,26 @@ KxRestoreFloatingPointState(PKFLOATING_SAVE FloatingState)
 VOID FASTCALL
 KeInvalidateRangeAllCaches(PVOID BaseAddress, ULONG Length)
 {
-    ULONG Ctr, DLine, ILine;
+    ULONG Ctr, DLine;
     ULONG_PTR Address, Last;
+    BOOLEAN CheckValidity;
 
     if (Length == 0)
         return;
     __asm__ __volatile__("mrc p15, 0, %0, c0, c0, 1" : "=r" (Ctr));
     DLine = 4UL << ((Ctr >> 16) & 15);
-    ILine = 4UL << (Ctr & 15);
     Last = (ULONG_PTR)BaseAddress + Length - 1;
+    CheckValidity = (BOOLEAN)((ULONG_PTR)BaseAddress < (ULONG_PTR)MmSystemRangeStart);
     __asm__ __volatile__("dsb ish" ::: "memory");
     for (Address = (ULONG_PTR)BaseAddress & ~(ULONG_PTR)(DLine - 1);; Address += DLine)
     {
-        __asm__ __volatile__("mcr p15, 0, %0, c7, c14, 1" :: "r" (Address) : "memory");
+        if (!CheckValidity || MmIsAddressValid((PVOID)Address))
+            __asm__ __volatile__("mcr p15, 0, %0, c7, c14, 1" :: "r" (Address) : "memory");
         if (Last - Address < DLine)
             break;
     }
-    __asm__ __volatile__("dsb ish" ::: "memory");
-    for (Address = (ULONG_PTR)BaseAddress & ~(ULONG_PTR)(ILine - 1);; Address += ILine)
-    {
-        __asm__ __volatile__("mcr p15, 0, %0, c7, c5, 1" :: "r" (Address) : "memory");
-        if (Last - Address < ILine)
-            break;
-    }
-    __asm__ __volatile__("dsb ish\n\tisb" ::: "memory");
+    __asm__ __volatile__("dsb ish\n\tmcr p15, 0, %0, c7, c5, 0\n\tdsb ish\n\tisb"
+                         :: "r" (0) : "memory");
 }
 
 KCONTINUE_STATUS NTAPI

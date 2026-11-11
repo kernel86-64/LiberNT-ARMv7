@@ -2459,6 +2459,7 @@ LoaderScan:
         DPRINT1("LdrRelocateImageWithBias failed with status 0x%x\n", Status);
         goto Quickie;
     }
+    KeInvalidateRangeAllCaches(ModuleLoadBase, DriverSize);
 
     NtHeader = RtlImageNtHeader(ModuleLoadBase);
 

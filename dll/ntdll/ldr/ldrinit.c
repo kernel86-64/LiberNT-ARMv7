@@ -214,6 +214,7 @@ LdrpMapWow64Ntdll(
         Status = LdrpSetProtection(ViewBase, FALSE);
         if (NT_SUCCESS(Status)) Status = LdrRelocateImageWithBias(ViewBase, 0, NULL, STATUS_SUCCESS, STATUS_CONFLICTING_ADDRESSES, STATUS_INVALID_IMAGE_FORMAT);
         if (NT_SUCCESS(Status)) Status = LdrpSetProtection(ViewBase, TRUE);
+        if (NT_SUCCESS(Status)) Status = ZwFlushInstructionCache(NtCurrentProcess(), ViewBase, NtHeader->OptionalHeader.SizeOfImage);
         if (!NT_SUCCESS(Status))
         {
             NtUnmapViewOfSection(NtCurrentProcess(), ViewBase);
@@ -3339,6 +3340,10 @@ LdrpInitializeProcess(IN PCONTEXT Context,
             DPRINT1("LdrRelocateImageWithBias() failed\n");
             return Status;
         }
+        Status = ZwFlushInstructionCache(NtCurrentProcess(),
+                                         ViewBase,
+                                         NtHeader->OptionalHeader.SizeOfImage);
+        if (!NT_SUCCESS(Status)) return Status;
 
         /* Check if a start context was provided */
         if (Context)

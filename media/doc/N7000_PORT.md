@@ -1,10 +1,32 @@
 # Samsung Galaxy Note GT-N7000 bring-up
 
 Target: Exynos4210, two Cortex-A9 cores, 1 GiB installed RAM, microSD boot
-through EDK II firmware. Entry into the real kernel was confirmed on
-2026-11-11; startup currently stops at the NVS LPAE prerequisite check. The EFI platform inventory and FreeLoader configuration
-loading have both run on the GT-N7000 through the supplied firmware and
-microSD Shell autostart. The FreeLoader run did not reach kernel handoff.
+through EDK II firmware. The real kernel, NVS, storage stack, SMSS, CSRSS,
+LSASS and the BasicDisplay adapter have run on the GT-N7000. The current
+graphics milestone is `DxgkAdapterStart` followed by
+`desktop ready 800x1280 (scanout)`.
+
+## Current state
+
+On 2026-11-11 the GT-N7000 reached the BasicDisplay desktop scanout from a
+microSD payload without flashing firmware. The graphics path initially
+executed stale ARM `MOVW/MOVT` immediates after relocation. The loader now
+invalidates the instruction cache after a relocated image is committed,
+including the system-image and user-mode relocation paths.
+
+Validated locally:
+
+| Check | Result |
+| --- | --- |
+| N7000 storage, RTC and MCT tests | PASS |
+| N7000 `DxgkAdapterStart` | reached |
+| N7000 `DISPLAY_BRIDGE: ... desktop ready 800x1280 (scanout)` | reached |
+| `SMDKC210 --stage login` | PASS (28.84 s), Explorer desktop |
+| `UEFI --stage user` | PASS (8.31 s) |
+
+The next hardware blocker is user-mode initialization: `kernelbase.dll`
+exits during NLS locale loading, and `lpk.dll` is absent. The graphics driver
+itself is no longer the failing component.
 
 ## Hardware result
 

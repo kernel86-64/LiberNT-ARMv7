@@ -126,11 +126,12 @@ VOID
 KeSweepICache(IN PVOID BaseAddress,
               IN SIZE_T FlushSize)
 {
-    //
-    // Always sweep the whole cache
-    //
-    UNREFERENCED_PARAMETER(BaseAddress);
-    UNREFERENCED_PARAMETER(FlushSize);
+    if (BaseAddress != NULL && FlushSize != 0)
+    {
+        KeInvalidateRangeAllCaches(BaseAddress, (ULONG)FlushSize);
+        return;
+    }
+
     _MoveToCoprocessor(0, CP15_ICIALLU);
 }
 

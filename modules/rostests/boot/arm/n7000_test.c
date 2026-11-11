@@ -169,15 +169,16 @@ ArmN7000StoragePass(PUCHAR Written, PUCHAR Read, ULONG Length, UCHAR Seed)
     OBJECT_ATTRIBUTES Attributes;
     IO_STATUS_BLOCK IoStatus;
     HANDLE File;
-    LARGE_INTEGER Offset;
+    LARGE_INTEGER Offset, AllocationSize;
     FILE_STANDARD_INFORMATION Information;
     ULONG Index;
     NTSTATUS Status;
 
     for (Index = 0; Index < Length; ++Index) Written[Index] = (UCHAR)(Index ^ Seed);
     InitializeObjectAttributes(&Attributes, &Name, OBJ_CASE_INSENSITIVE | OBJ_KERNEL_HANDLE, NULL, NULL);
+    AllocationSize.QuadPart = Length;
     Status = ZwCreateFile(&File, FILE_READ_DATA | FILE_WRITE_DATA | SYNCHRONIZE,
-                          &Attributes, &IoStatus, NULL, FILE_ATTRIBUTE_NORMAL, 0,
+                          &Attributes, &IoStatus, &AllocationSize, FILE_ATTRIBUTE_NORMAL, 0,
                           FILE_OVERWRITE_IF, FILE_SYNCHRONOUS_IO_NONALERT | FILE_NON_DIRECTORY_FILE,
                           NULL, 0);
     if (!NT_SUCCESS(Status)) return Status;

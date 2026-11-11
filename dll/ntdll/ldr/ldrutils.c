@@ -1863,6 +1863,12 @@ SkipCheck:
 
                     /* Return the protection */
                     Status = LdrpSetProtection(ViewBase, TRUE);
+                    if (NT_SUCCESS(Status))
+                    {
+                        Status = ZwFlushInstructionCache(NtCurrentProcess(),
+                                                        ViewBase,
+                                                        NtHeaders->OptionalHeader.SizeOfImage);
+                    }
                 }
             }
             /* Handle any kind of failure */
