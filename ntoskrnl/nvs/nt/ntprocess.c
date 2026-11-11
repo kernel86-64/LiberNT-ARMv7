@@ -484,7 +484,8 @@ MiCreatePebOrTeb(
     do
     {
         Status = MiAllocateVirtualMemoryEx(MiSpaceOfProcess(Process), &Address, &RegionSize,
-                                           MI_MEM_RESERVE | MI_MEM_COMMIT, MI_PROT_READWRITE, HighestAddress);
+                                           MI_MEM_RESERVE | MI_MEM_COMMIT | MI_MEM_TOP_DOWN,
+                                           MI_PROT_READWRITE, HighestAddress);
     } while (NT_SUCCESS(MiWaitForMemory(Status, &Attempts)) && Status == STATUS_NO_MEMORY);
 
     *Base = (ULONG_PTR)Address;

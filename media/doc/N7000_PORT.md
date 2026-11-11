@@ -8,11 +8,13 @@ graphics milestone is `DxgkAdapterStart` followed by
 
 ## Current state
 
-On 2026-11-11 the GT-N7000 reached the BasicDisplay desktop scanout from a
-microSD payload without flashing firmware. The graphics path initially
-executed stale ARM `MOVW/MOVT` immediates after relocation. The loader now
-invalidates the instruction cache after a relocated image is committed,
-including the system-image and user-mode relocation paths.
+On 2026-11-12 the GT-N7000 reached the Explorer desktop from a microSD
+payload without flashing firmware. Winlogon loads the Administrator profile,
+starts `userinit.exe`, and `explorer.exe` creates the shell and taskbar. The
+graphics path initially executed stale ARM `MOVW/MOVT` immediates after
+relocation. The loader now invalidates the instruction cache after a
+relocated image is committed, including the system-image and user-mode
+relocation paths.
 
 Validated locally:
 
@@ -21,12 +23,13 @@ Validated locally:
 | N7000 storage, RTC and MCT tests | PASS |
 | N7000 `DxgkAdapterStart` | reached |
 | N7000 `DISPLAY_BRIDGE: ... desktop ready 800x1280 (scanout)` | reached |
+| N7000 Explorer desktop and taskbar | reached |
 | `SMDKC210 --stage login` | PASS (28.84 s), Explorer desktop |
 | `UEFI --stage user` | PASS (8.31 s) |
 
-The next hardware blocker is user-mode initialization: `kernelbase.dll`
-exits during NLS locale loading, and `lpk.dll` is absent. The graphics driver
-itself is no longer the failing component.
+The shell still reports non-fatal activation-context, theme, COM proxy and
+drag-drop errors. The payload has no Aero visual style and no network
+provider enumeration, so those paths are not hardware milestones yet.
 
 ## Hardware result
 
@@ -883,3 +886,34 @@ seconds, loader in 12.22 seconds, SMSS with a 16 MiB paging file in 8.31 seconds
 and modern-VirtIO `csr --login` in 30.14 seconds with automatic logon, profile and
 Explorer desktop checks. The SMDKC210 VM was stopped afterward. No phone GUI test
 or flash was performed during this verification.
+
+### Explorer desktop on N7000
+
+The 2026-11-12 hardware run reached a visible Explorer desktop and taskbar on
+the GT-N7000. Winlogon initialized the session, loaded the Administrator
+profile, started `userinit.exe`, and `explorer.exe` created the shell. The
+desktop milestone follows the earlier BasicDisplay scanout and does not use a
+flashed firmware image.
+
+Two user-mode failures had to be removed to reach that state. The card lacked
+`ntmarta.dll`, so `advapi32!SetUserHiveSecurity` returned error 126 and
+`userenv!CreateUserProfileW` could not create the profile. It also lacked
+`userinit.exe` and `explorer.exe`; `explorer.exe` belongs in
+`\Windows\explorer.exe`, not in `System32`. The payload now also carries
+`lpk.dll`, `shsvcs.dll`, `rpcss.exe`, `actxprxy.dll`, `stobject.dll`,
+`mmdevapi.dll`, and the UI fonts used by the shell. Remaining shell logs report
+missing activation contexts for `Microsoft.Windows.Common-Controls (6.0.0.0)`,
+the absent Aero style, COM proxy registration, and network provider
+enumeration; none of these prevents the desktop from being displayed.
+
+The hardware runs exposed a separate NVS defect: `MiCreatePebOrTeb` allocated
+PEB and TEB pages from the randomized bottom-up region. When the random base
+fell inside the mapped image, the following `RtlZeroMemory` wrote into a
+read-only image page, and the nested fault became a `0x1E` bugcheck. PEB and
+TEB allocations now pass `MI_MEM_TOP_DOWN`, matching the high user address
+where Windows places these structures. The fix is in
+`ntoskrnl/nvs/nt/ntprocess.c` and affects every process, not only ARM.
+
+QEMU regressions after the change: `SMDKC210 --stage login` passed in 28.47
+seconds with the Explorer desktop, and `UEFI --stage user` passed in 8.31
+seconds. Both ran headless with the existing fixed images.

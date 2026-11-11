@@ -322,11 +322,13 @@ def prepare_kernel(build, stage, no_build, manual_login=False):
         if login:
             UEFI.run('mcopy', '-o', '-i', image, payload / 'default', '::/Users/Default/NTUSER.DAT')
             prepare_desktop(build, image, no_build)
+    usb_drivers = ['usbport', 'usbd', 'usbhub']
     if input_devices:
-        for name in ['usbport', 'usbd', 'usbehci', 'usbhub', 'hidusb', 'hidclass', 'hidparse',
-                     'kbdhid', 'mouhid', 'kbdclass', 'mouclass']:
-            source = next((build / 'drivers').rglob(name + '.sys'))
-            UEFI.run('mcopy', '-o', '-i', image, source, '::/reactos/system32/drivers/' + name + '.sys')
+        usb_drivers.extend(['usbehci', 'hidusb', 'hidclass', 'hidparse',
+                            'kbdhid', 'mouhid', 'kbdclass', 'mouclass'])
+    for name in usb_drivers:
+        source = next((build / 'drivers').rglob(name + '.sys'))
+        UEFI.run('mcopy', '-o', '-i', image, source, '::/reactos/system32/drivers/' + name + '.sys')
     startup = build / 'n7000-qemu-startup.nsh'
     startup.write_text('@echo -off\nfs0:\n\\EFI\\BOOT\\BOOTARM.EFI\n')
     UEFI.run('mcopy', '-o', '-i', image, startup, '::/startup.nsh')
