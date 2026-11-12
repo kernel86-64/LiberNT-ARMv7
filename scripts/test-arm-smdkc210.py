@@ -251,10 +251,14 @@ def prepare_kernel(build, stage, no_build, manual_login=False):
         'drivers/bus/sd/sdbus_reg.inf',
         'drivers/storage/class/sffdisk/sffdisk_reg.inf',
         'drivers/storage/partmgr/partmgr_reg.inf']]
+    if startup:
+        sources.append(ROOT / 'drivers/hid/mxt540e/mxt540e_reg.inf')
     infs = payload / 'n7000-infs.txt'
     infs.write_text(''.join(str(ROOT / name) + '\n' for name in [
         'drivers/bus/acpi/acpi.inf', 'drivers/bus/sd/sdbus.inf',
         'drivers/storage/class/sffdisk/sffdisk.inf', 'media/inf/hal.inf']))
+    if startup:
+        infs.write_text(infs.read_text() + str(ROOT / 'drivers/hid/mxt540e/mxt540e.inf') + '\n')
     if input_devices:
         infs.write_text(infs.read_text() + ''.join(str(ROOT / 'media/inf' / name) + '\n'
                         for name in ['usbport.inf', 'usb.inf', 'input.inf', 'keyboard.inf', 'msmouse.inf']))
@@ -302,7 +306,10 @@ def prepare_kernel(build, stage, no_build, manual_login=False):
                        'drivers/directx/dxgkrnl/dxgkrnl.sys',
                        'drivers/directx/softgpu/BasicDisplay.sys',
                        'drivers/filesystems/npfs/npfs.sys',
-                       'drivers/crypto/ksecdd/ksecdd.sys']:
+                       'drivers/crypto/ksecdd/ksecdd.sys',
+                       'drivers/hid/hidclass/hidclass.sys',
+                       'drivers/hid/hidparse/hidparse.sys',
+                       'drivers/hid/mxt540e/mxt540e.sys']:
             UEFI.run('mcopy', '-o', '-i', image, build / source,
                      '::/reactos/system32/drivers/' + Path(source).name)
         UEFI.run('mcopy', '-o', '-i', image, build / 'win32ss/drivers/displays/framebuf/framebuf.dll',

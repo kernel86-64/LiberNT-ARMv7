@@ -917,3 +917,37 @@ where Windows places these structures. The fix is in
 QEMU regressions after the change: `SMDKC210 --stage login` passed in 28.47
 seconds with the Explorer desktop, and `UEFI --stage user` passed in 8.31
 seconds. Both ran headless with the existing fixed images.
+
+### mXT540E touchscreen
+
+`drivers/hid/mxt540e` is an ARM32 HID minidriver for the GT-N7000 Atmel
+mXT540E. It owns the controller directly: I2C3 at address `0x4c`, SDA/SCL on
+GPA1[2:3], the LDO enable on GPL0[3], and the active-low CHG line on
+GPX0[4]. The controller is powered and reset through the LDO, probed through
+its info block and object table, and its T5 message queue is drained by a
+10 ms polling thread. T9 multi-touch messages become a standard HID touch
+report with up to ten contacts; the report descriptor exposes the 800x1280
+panel range.
+
+The current firmware DSDT exposes only `EXYN0001` and `EXYN0006`; it does not
+describe the touchscreen's I2C, GPIO and interrupt resources. The driver INF
+already matches `ACPI\EXYN0004` for the planned ACPI node, but the bring-up
+path uses `ROOT\LIBERNTVIRTMXT540E` and `mxt540e_reg.inf`. That registry file
+is opt-in through `-DLIBERNT_N7000_TOUCH=ON` or an equivalent N7000 image
+install, so other ARM targets do not touch Exynos touch registers.
+
+The SMDKC210 login fixture now includes the root device as a smoke test. On
+that machine I2C3 has no mXT540E, so the driver logs
+`mxt540e: info read failed 0xc0000185` (STATUS_IO_DEVICE_ERROR, NACK) and
+fails the device without affecting the desktop. The login test passed in
+28.44 seconds with that probe in the log.
+
+For the phone test, mount the card and run `scripts/n7000-install-mxt540e.py`
+with a `reged` binary from chntpw. It copies `mxt540e.sys`, `hidclass.sys`
+and `hidparse.sys`, backs up the SYSTEM hive and its logs, and imports the
+root device entries. Success is visible in the OS log as the `mxt540e:
+family ...`, `mxt540e: T5 ...` and `mxt540e: started` lines. If the probe
+returns `0xc0000185`, check the LDO, the I2C3 pin mux and the controller's
+power state. The driver relies on the controller NVM configuration that Linux
+and the firmware TouchDxe leave behind; it does not yet write a T9
+configuration blob.

@@ -1,0 +1,21 @@
+; PROJECT:     LiberNT Atmel mXT540E touchscreen
+; LICENSE:     GPL-3.0-or-later (https://spdx.org/licenses/GPL-3.0-or-later)
+; PURPOSE:     Register the N7000 touchscreen as a root HID device
+; COPYRIGHT:   Copyright 2026 LiberNT contributors
+
+[Version]
+Signature = "$Windows NT$"
+
+[AddReg]
+HKLM,"SYSTEM\CurrentControlSet\Control\Class\{745A17A0-74D3-11D0-B6FE-00A0C90F57DA}","Class",0x00000000,"HIDClass"
+HKLM,"SYSTEM\CurrentControlSet\Control\Class\{745A17A0-74D3-11D0-B6FE-00A0C90F57DA}","ClassDesc",0x00000000,"HID devices"
+HKLM,"SYSTEM\CurrentControlSet\Services\mxt540e","Type",0x00010001,1
+HKLM,"SYSTEM\CurrentControlSet\Services\mxt540e","Start",0x00010001,3
+HKLM,"SYSTEM\CurrentControlSet\Services\mxt540e","ErrorControl",0x00010001,1
+HKLM,"SYSTEM\CurrentControlSet\Services\mxt540e","Group",0x00000000,"Extended Base"
+HKLM,"SYSTEM\CurrentControlSet\Services\mxt540e","ImagePath",0x00020000,"system32\drivers\mxt540e.sys"
+HKLM,"SYSTEM\CurrentControlSet\Enum\ROOT\LIBERNTVIRTMXT540E\0000","HardwareID",0x00010000,"ROOT\LIBERNTVIRTMXT540E"
+HKLM,"SYSTEM\CurrentControlSet\Enum\ROOT\LIBERNTVIRTMXT540E\0000","Service",0x00000000,"mxt540e"
+HKLM,"SYSTEM\CurrentControlSet\Enum\ROOT\LIBERNTVIRTMXT540E\0000","Class",0x00000000,"HIDClass"
+HKLM,"SYSTEM\CurrentControlSet\Enum\ROOT\LIBERNTVIRTMXT540E\0000","ClassGUID",0x00000000,"{745A17A0-74D3-11D0-B6FE-00A0C90F57DA}"
+HKLM,"SYSTEM\CurrentControlSet\Enum\ROOT\LIBERNTVIRTMXT540E\0000","ConfigFlags",0x00010001,0
