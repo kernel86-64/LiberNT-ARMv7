@@ -138,10 +138,15 @@ static NTSTATUS ArmProcessorIdentity(VOID)
         ((PWCHAR)Information->Data)[Information->DataLength / sizeof(WCHAR) - 1] != UNICODE_NULL)
         return STATUS_DATA_ERROR;
     RtlInitUnicodeString(&ActualString, (PWCHAR)Information->Data);
-    if (Midr >> 24 == 0x41 && ((Midr >> 4) & 0xfff) == 0xc0f)
+    if (Midr >> 24 == 0x41 && ((Midr >> 4) & 0xfff) == 0xc09)
     {
-        RtlInitUnicodeString(&ExpectedString, L"ARM Cortex-A15");
-        if (!RtlEqualUnicodeString(&ExpectedString, &ActualString, FALSE)) return STATUS_DATA_ERROR;
+        RtlInitUnicodeString(&ExpectedString, L"Samsung Exynos 4210");
+        if (!RtlEqualUnicodeString(&ExpectedString, &ActualString, FALSE))
+        {
+            DbgPrint("ARM processor name mismatch: MIDR=%08lx got=%wZ\n",
+                     Midr, &ActualString);
+            return STATUS_DATA_ERROR;
+        }
     }
     DbgPrint("ARM processor identity tests: PASS (MIDR=%08lx, name=%wZ)\n", Midr, &ActualString);
     return STATUS_SUCCESS;

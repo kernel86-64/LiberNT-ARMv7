@@ -951,3 +951,16 @@ returns `0xc0000185`, check the LDO, the I2C3 pin mux and the controller's
 power state. The driver relies on the controller NVM configuration that Linux
 and the firmware TouchDxe leave behind; it does not yet write a T9
 configuration blob.
+
+### SMBIOS processor identity
+
+Exynos441xPkg publishes SMBIOS 3.8 Type 1 and Type 4 records. Type 1 reports
+`Samsung Electronics` / `GT-N7000`; Type 4 reports `Samsung` /
+`Samsung Exynos 4210` for the two Cortex-A9 cores. The ARM32 configuration
+manager prefers Type 4's manufacturer/version over MIDR and keeps the MIDR
+fallback for firmware without SMBIOS.
+
+`SMDKC210 --stage session` passed in 12.2 seconds with
+`ARM N7000 processor name tests: PASS`; the same run installed a 227-byte
+SMBIOS 3.8 table. QEMU `virt` continues to pass its storage fixture with the
+firmware-provided `virt-11.1` name.

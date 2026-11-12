@@ -6,20 +6,24 @@ remaining Cortex-A9 requirements, see [N7000 bring-up](N7000_PORT.md).
 CPU identification captures MIDR during each processor's PCR initialization.
 The HARDWARE registry retains the raw MIDR in `Identifier` and supplies
 `ProcessorNameString` and `VendorIdentifier`, which the existing system
-properties page reads. Arm implementer `0x41`, part `0xc0f` is displayed as
-`ARM Cortex-A15`; part `0xc09` as `ARM Cortex-A9`. Other implementers/parts
-retain an explicit MIDR description instead of being assigned an Arm core's
-name. This identifies the processor core, not the containing SoC.
+properties page reads. ARM32 now prefers the processor strings published by
+SMBIOS Type 4 and falls back to MIDR when the firmware has no such record.
+Arm implementer `0x41`, part `0xc0f` is displayed as `ARM Cortex-A15`; part
+`0xc09` as `ARM Cortex-A9`. Other implementers/parts retain an explicit MIDR
+description instead of being assigned an Arm core's name. The SMBIOS
+manufacturer/version identifies the platform's processor; the MIDR fallback
+identifies only the processor core, not the containing SoC.
 
 Part/implementer evidence is the Arm
 [Cortex-A9 TRM, Main ID Register](https://documentation-service.arm.com/static/5f0377b2cafe527e86f5c247)
 and [Cortex-A15 TRM, c0 registers](https://support.arm.com/documentation/ddi0438/d/System-Control/Register-summary/c0-registers?lang=en).
 The `storage` kernel regression checks the raw identifier against CP15 and
-requires the Cortex-A15 display name on QEMU virt. Native name-decoder checks
-cover A9/A15 revisions, zero/unknown MIDRs and a different implementer with
-the same part bits; the SMDKC210 test uses its real emulated Cortex-A9 MIDR.
+accepts the firmware SMBIOS name or the Cortex-A15 MIDR fallback on QEMU virt.
+Native name-decoder checks cover A9/A15 revisions, zero/unknown MIDRs and a
+different implementer with the same part bits; the SMDKC210 test uses its
+real emulated Cortex-A9 MIDR and requires the Exynos SMBIOS name.
 The former kernel produced `ARM MIDR 00000000` despite CP15/GDB reporting
-`0x414fc0f0`; the fixed kernel reports `ARM Cortex-A15`.
+`0x414fc0f0`; the fixed fallback reports `ARM Cortex-A15`.
 
 MIDR bit slices are not Win32 processor-level/revision values. Their old
 unsubstantiated assignments were removed when initializing MIDR; the previous
@@ -29,8 +33,10 @@ remains `INFO_NEEDED`, rather than guessing from MIDR.
 [SYSTEM_INFO documentation](https://learn.microsoft.com/windows/win32/api/sysinfoapi/ns-sysinfoapi-system_info).
 
 The updated existing full image was booted to the desktop and its system
-properties page displayed `ARM Limited` / `ARM Cortex-A15`, preserving the
-installation and profile. A later cold boot stopped after boot-driver loading
+properties page displayed the firmware's processor identity, preserving the
+installation and profile. On QEMU `virt` the firmware reports `virt-11.1`;
+ARM32 falls back to `ARM Limited` / `ARM Cortex-A15` when SMBIOS is absent.
+A later cold boot stopped after boot-driver loading
 in a repeating Data Abort: DFSR `0xa07`, DFAR `0x801f8fe8`. Its saved frame chain
 shows a clock interrupt inside image paging I/O, with the clock handler using
 the interrupted thread's SVC stack near its lower boundary. Stack exhaustion

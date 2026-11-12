@@ -232,6 +232,47 @@ ArmN7000StorageTest(VOID)
     return Status;
 }
 
+static NTSTATUS
+ArmN7000ProcessorNameTest(VOID)
+{
+    UNICODE_STRING KeyName = RTL_CONSTANT_STRING(
+        L"\\Registry\\Machine\\Hardware\\Description\\System\\CentralProcessor\\0");
+    UNICODE_STRING ValueName = RTL_CONSTANT_STRING(L"ProcessorNameString");
+    OBJECT_ATTRIBUTES Attributes;
+    HANDLE Key;
+    UCHAR Buffer[256];
+    PKEY_VALUE_PARTIAL_INFORMATION Information = (PKEY_VALUE_PARTIAL_INFORMATION)Buffer;
+    UNICODE_STRING Actual, Expected = RTL_CONSTANT_STRING(L"Samsung Exynos 4210");
+    ULONG Length, Midr;
+    NTSTATUS Status;
+
+    __asm__ __volatile__("mrc p15, 0, %0, c0, c0, 0" : "=r"(Midr));
+    if ((Midr >> 24) != 0x41 || ((Midr >> 4) & 0xfff) != 0xc09)
+        return STATUS_SUCCESS;
+
+    InitializeObjectAttributes(&Attributes, &KeyName,
+                               OBJ_CASE_INSENSITIVE | OBJ_KERNEL_HANDLE, NULL, NULL);
+    Status = ZwOpenKey(&Key, KEY_QUERY_VALUE, &Attributes);
+    if (!NT_SUCCESS(Status)) return Status;
+    Status = ZwQueryValueKey(Key, &ValueName, KeyValuePartialInformation,
+                             Buffer, sizeof(Buffer), &Length);
+    ZwClose(Key);
+    if (!NT_SUCCESS(Status)) return Status;
+    if (Information->Type != REG_SZ ||
+        Information->DataLength <= sizeof(WCHAR) ||
+        Information->DataLength % sizeof(WCHAR) ||
+        Information->DataLength > sizeof(Buffer) - FIELD_OFFSET(KEY_VALUE_PARTIAL_INFORMATION, Data))
+        return STATUS_DATA_ERROR;
+
+    RtlInitUnicodeString(&Actual, (PWCHAR)Information->Data);
+    if (!RtlEqualUnicodeString(&Expected, &Actual, TRUE))
+    {
+        DbgPrint("ARM N7000 processor name mismatch: %wZ\n", &Actual);
+        return STATUS_DATA_ERROR;
+    }
+    return STATUS_SUCCESS;
+}
+
 static VOID NTAPI
 ArmN7000Reinitialize(PDRIVER_OBJECT DriverObject, PVOID Context, ULONG Count)
 {
@@ -249,7 +290,10 @@ ArmN7000Reinitialize(PDRIVER_OBJECT DriverObject, PVOID Context, ULONG Count)
         else ObDereferenceObject(Thread);
     }
 
-    Status = ArmN7000ClockTest();
+    Status = ArmN7000ProcessorNameTest();
+    DbgPrint("ARM N7000 processor name tests: %s (0x%08lx)\n",
+             NT_SUCCESS(Status) ? "PASS" : "FAIL", Status);
+    if (NT_SUCCESS(Status)) Status = ArmN7000ClockTest();
     DbgPrint("ARM N7000 clock tests: %s (0x%08lx)\n", NT_SUCCESS(Status) ? "PASS" : "FAIL", Status);
     if (NT_SUCCESS(Status)) Status = ArmN7000RtcTest();
     DbgPrint("ARM N7000 RTC tests: %s (0x%08lx)\n", NT_SUCCESS(Status) ? "PASS" : "FAIL", Status);

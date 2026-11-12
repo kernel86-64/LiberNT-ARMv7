@@ -17,13 +17,16 @@
 
 /* FUNCTIONS *****************************************************************/
 
-static NTSTATUS CmpArmSetProcessorIdentity(HANDLE Key, ULONG Midr)
+static NTSTATUS CmpArmSetProcessorIdentity(HANDLE Key, ULONG Midr,
+                                           const CHAR *SmbiosManufacturer,
+                                           const CHAR *SmbiosVersion)
 {
     WCHAR Buffer[64];
     UNICODE_STRING Name;
-    const CHAR *ProcessorName = KiArmProcessorName(Midr);
+    const CHAR *ProcessorName;
     NTSTATUS Status;
 
+    ProcessorName = SmbiosVersion && *SmbiosVersion ? SmbiosVersion : KiArmProcessorName(Midr);
     if (ProcessorName)
         Status = RtlStringCbPrintfW(Buffer, sizeof(Buffer), L"%hs", ProcessorName);
     else
@@ -32,7 +35,9 @@ static NTSTATUS CmpArmSetProcessorIdentity(HANDLE Key, ULONG Midr)
     RtlInitUnicodeString(&Name, L"ProcessorNameString");
     Status = NtSetValueKey(Key, &Name, 0, REG_SZ, Buffer, (ULONG)(wcslen(Buffer) + 1) * sizeof(WCHAR));
     if (!NT_SUCCESS(Status)) return Status;
-    if ((Midr >> 24) == 0x41)
+    if (SmbiosManufacturer && *SmbiosManufacturer)
+        Status = RtlStringCbPrintfW(Buffer, sizeof(Buffer), L"%hs", SmbiosManufacturer);
+    else if ((Midr >> 24) == 0x41)
         Status = RtlStringCbCopyW(Buffer, sizeof(Buffer), L"ARM Limited");
     else
         Status = RtlStringCbPrintfW(Buffer, sizeof(Buffer), L"ARM implementer 0x%02lx", Midr >> 24);
@@ -52,9 +57,15 @@ CmpInitializeMachineDependentConfiguration(IN PLOADER_PARAMETER_BLOCK LoaderBloc
     HANDLE System, Key;
     ULONG Processor, Midr, Disposition;
     CHAR Identifier[64];
+    CHAR SmbiosManufacturer[64];
+    CHAR SmbiosVersion[64];
     NTSTATUS Status;
 
-    UNREFERENCED_PARAMETER(LoaderBlock);
+    CmpGetSmbiosProcessorStrings(LoaderBlock,
+                                 SmbiosManufacturer,
+                                 sizeof(SmbiosManufacturer),
+                                 SmbiosVersion,
+                                 sizeof(SmbiosVersion));
     RtlInitUnicodeString(&Name, L"\\Registry\\Machine\\Hardware\\Description\\System");
     InitializeObjectAttributes(&Attributes, &Name, OBJ_CASE_INSENSITIVE | OBJ_KERNEL_HANDLE, NULL, NULL);
     Status = NtOpenKey(&System, KEY_READ | KEY_WRITE, &Attributes);
@@ -94,7 +105,7 @@ CmpInitializeMachineDependentConfiguration(IN PLOADER_PARAMETER_BLOCK LoaderBloc
         Status = CmpInitializeRegistryNode(&ConfigData, System, &Key,
                                           InterfaceTypeUndefined, MAXULONG, IndexTable);
         if (!NT_SUCCESS(Status)) break;
-        Status = CmpArmSetProcessorIdentity(Key, Midr);
+        Status = CmpArmSetProcessorIdentity(Key, Midr, SmbiosManufacturer, SmbiosVersion);
         NtClose(Key);
         if (!NT_SUCCESS(Status)) break;
     }
