@@ -325,7 +325,7 @@ KiFindBestStandbySource(
         Thread = Source->NextThread;
         if ((CurrentThread != NULL) &&
             (CurrentThread != Source->IdleThread) &&
-            (KiThreadAffinityMask(CurrentThread) & Source->SetMember) &&
+            (KiThreadAffinityMask(CurrentThread) & KiPrcbAffinity(Source)) &&
             (Thread != NULL) &&
             (Thread != Source->IdleThread) &&
             (Thread->State == Standby) &&
@@ -364,7 +364,7 @@ KiTryStealStandbyThreadLocked(
      * leave that thread running where its affinity no longer allows. */
     if ((CurrentThread == NULL) ||
         (CurrentThread == Source->IdleThread) ||
-        !(KiThreadAffinityMask(CurrentThread) & Source->SetMember) ||
+        !(KiThreadAffinityMask(CurrentThread) & KiPrcbAffinity(Source)) ||
         (Thread == NULL) ||
         (Thread == Source->IdleThread) ||
         (Thread->State != Standby) ||
@@ -449,7 +449,7 @@ KiBalanceReadyQueues(
 
     TargetCpu = Target->Number;
     if ((TargetCpu >= (ULONG)KeNumberProcessors) ||
-        !(KeActiveProcessors & Target->SetMember) ||
+        !(KeActiveProcessors & KiPrcbAffinity(Target)) ||
         KiIsProcessorParked(Target))
     {
         return FALSE;
@@ -630,14 +630,14 @@ ThreadFound:
     {
         if (SmpDbgEnabled)
             SmpDbgSchedulerIpi(SourceCpu, SourceReplacement, SMPDBG_SCHED_STANDBY_REPAIR);
-        KiIpiSend(Source->SetMember, IPI_DPC);
+        KiIpiSend(KiPrcbAffinity(Source), IPI_DPC);
     }
 
     if (RequestIpi)
     {
         if (SmpDbgEnabled)
             SmpDbgSchedulerIpi(TargetCpu, Thread, IpiCause);
-        KiIpiSend(Target->SetMember, IPI_DPC);
+        KiIpiSend(KiPrcbAffinity(Target), IPI_DPC);
     }
 
     if (DisplacedThread != NULL)
@@ -989,7 +989,7 @@ KiDeferredReadyThread(IN PKTHREAD Thread)
             {
                 if (SmpDbgEnabled)
                     SmpDbgSchedulerIpi(Prcb->Number, Thread, SMPDBG_SCHED_REPLACE_STANDBY);
-                KiIpiSend(Prcb->SetMember, IPI_DPC);
+                KiIpiSend(KiPrcbAffinity(Prcb), IPI_DPC);
             }
 #endif
 
@@ -1493,7 +1493,7 @@ KiUpdateEffectiveAffinityThread(
     Thread->IdealProcessor = Thread->UserIdealProcessor;
 
     /* Check if the affinity doesn't match with the current processor */
-    if ((Prcb->SetMember & KiThreadAffinityMask(Thread)) == 0)
+    if ((KiPrcbAffinity(Prcb) & KiThreadAffinityMask(Thread)) == 0)
     {
         if (Thread->State == Running)
         {

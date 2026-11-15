@@ -21,6 +21,16 @@ SdBusHardwareAdjustPresentState(PFDO_EXTENSION FdoExtension, ULONG State)
     return State;
 }
 
+ULONG
+SdBusHardwareAdjustInterruptSignalEnable(PFDO_EXTENSION FdoExtension, ULONG Enable)
+{
+    PSDBUS_HARDWARE_EXTENSION Extension = FdoExtension->HardwareExtension;
+
+    if (Extension && Extension->Ops && Extension->Ops->AdjustInterruptSignalEnable)
+        return Extension->Ops->AdjustInterruptSignalEnable(FdoExtension, Enable);
+    return Enable;
+}
+
 NTSTATUS
 SdBusHardwareMapResources(
     _In_ PFDO_EXTENSION FdoExtension,

@@ -9,8 +9,20 @@
 
 #define KiServiceExit2 KiExceptionExit
 
-#define SYNCH_LEVEL DISPATCH_LEVEL
 #define PCR                     ((KPCR * const)KIP0PCRADDRESS)
+#define KI_ARM_SGI_DPC           0
+#define KI_ARM_SGI_APC           1
+#define KI_ARM_SGI_IPI           2
+#define KI_ARM_SGI_CLOCK         3
+
+VOID
+NTAPI
+KiInitializePcr(
+    IN ULONG ProcessorNumber,
+    IN PKIPCR Pcr,
+    IN PKTHREAD IdleThread,
+    IN PVOID PanicStack,
+    IN PVOID InterruptStack);
 
 //
 //Lockdown TLB entries

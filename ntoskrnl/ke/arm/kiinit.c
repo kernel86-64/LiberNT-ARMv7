@@ -55,7 +55,8 @@ KiInitializeKernel(IN PKPROCESS InitProcess,
     ULONG i;
 
     /* Set the default NX policy (opt-in) */
-    SharedUserData->NXSupportPolicy = NX_SUPPORT_POLICY_OPTIN;
+    if (!Number)
+        SharedUserData->NXSupportPolicy = NX_SUPPORT_POLICY_OPTIN;
 
     /* Initialize spinlocks and DPC data */
     KiInitSpinLocks(Prcb, Number);
@@ -108,10 +109,8 @@ KiInitializeKernel(IN PKPROCESS InitProcess,
     }
     else
     {
-        /* FIXME-V6: See if we want to support MP */
-        DPRINT1("ARM MPCore not supported\n");
+        KfLowerIrql(DISPATCH_LEVEL);
     }
-
     /* Setup the Idle Thread */
     KeInitializeThread(InitProcess,
                        InitThread,
@@ -127,7 +126,7 @@ KiInitializeKernel(IN PKPROCESS InitProcess,
     InitThread->Affinity.Mask = (KAFFINITY)1 << Number;
     InitThread->Affinity.Group = 0;
     InitThread->WaitIrql = DISPATCH_LEVEL;
-    InitProcess->ActiveProcessors = 1 << Number;
+    InterlockedOr((volatile LONG *)&InitProcess->ActiveProcessors, (KAFFINITY)1 << Number);
 
     /* HACK for MmUpdatePageDir */
     ((PETHREAD)InitThread)->ThreadsProcess = InitProcess;
@@ -164,6 +163,15 @@ KiInitializeKernel(IN PKPROCESS InitProcess,
     KiAcquirePrcbLock(Prcb);
     if (!Prcb->NextThread) KiIdleSummary |= 1 << Number;
     KiReleasePrcbLock(Prcb);
+
+    if (Number)
+    {
+        KeMemoryBarrier();
+        KeActiveProcessors |= Prcb->GroupSetMember;
+        KeNumberProcessors++;
+        KiNode0.ProcessorMask |= Prcb->GroupSetMember;
+        KeMemoryBarrier();
+    }
 
     /* Raise back to HIGH_LEVEL and clear the PRCB for the loader block */
     KfRaiseIrql(HIGH_LEVEL);
@@ -210,8 +218,10 @@ KiInitializePcr(IN ULONG ProcessorNumber,
 #endif
 
     /* Set the Processor Number and current Processor Mask */
+    Pcr->Prcb.LegacyNumber = (UCHAR)ProcessorNumber;
     Pcr->Prcb.Number = (UCHAR)ProcessorNumber;
     Pcr->Prcb.GroupSetMember = (KAFFINITY)1 << ProcessorNumber;
+    Pcr->Prcb.ParentNode = &KiNode0;
 
     /* Set the PRCB for this Processor */
     KiProcessorBlock[ProcessorNumber] = Pcr->CurrentPrcb;
@@ -384,10 +394,12 @@ AppCpuInit:
     /* Initialize the Processor with HAL */
     HalInitializeProcessor(Cpu, KeLoaderBlock);
 
-    /* Set active processors */
-    KeActiveProcessors |= Pcr->Prcb.GroupSetMember;
-    KeNumberProcessors++;
-
+    if (!Cpu)
+    {
+        KeActiveProcessors |= Pcr->Prcb.GroupSetMember;
+        KeNumberProcessors++;
+        KiNode0.ProcessorMask |= Pcr->Prcb.GroupSetMember;
+    }
     /* Check if this is the boot CPU */
     if (!Cpu)
     {
@@ -402,7 +414,8 @@ AppCpuInit:
     KfRaiseIrql(HIGH_LEVEL);
 
     KiArmInstallVectors();
-    MiInitializeKernelVaLayout(LoaderBlock);
+    if (!Cpu)
+        MiInitializeKernelVaLayout(LoaderBlock);
 
     /* Initialize the rest of the kernel now */
     KiInitializeKernel((PKPROCESS)LoaderBlock->Process,

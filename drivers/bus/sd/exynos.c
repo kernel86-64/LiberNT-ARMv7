@@ -61,13 +61,23 @@ SdBusExynosPresentState(PFDO_EXTENSION FdoExtension, ULONG State)
     return State;
 }
 
+static ULONG
+SdBusExynosInterruptSignalEnable(PFDO_EXTENSION FdoExtension, ULONG Enable)
+{
+    UNREFERENCED_PARAMETER(FdoExtension);
+    UNREFERENCED_PARAMETER(Enable);
+    /* FIXME: Keep Exynos SD interrupt signaling disabled while the SMP boot stall is investigated. */
+    return 0;
+}
+
 static const SDBUS_HARDWARE_OPS SdBusExynosOps =
 {
     .Release = SdBusExynosRelease,
     .InitializeController = SdBusExynosInitialize,
     .GetSlotCapabilities = SdBusExynosCapabilities,
     .GetBaseClock = SdBusExynosBaseClock,
-    .AdjustPresentState = SdBusExynosPresentState
+    .AdjustPresentState = SdBusExynosPresentState,
+    .AdjustInterruptSignalEnable = SdBusExynosInterruptSignalEnable
 };
 
 NTSTATUS

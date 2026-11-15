@@ -106,6 +106,9 @@ add_executable(ntoskrnl
     ntoskrnl.rc
     ${CMAKE_CURRENT_BINARY_DIR}/ntoskrnl.def)
 set_module_type(ntoskrnl kernel)
+if(ARCH STREQUAL "arm")
+    target_compile_definitions(ntoskrnl PRIVATE CONFIG_SMP)
+endif()
 
 if(ARCH STREQUAL "arm64")
     target_link_libraries(ntoskrnl rtl_kernel_context)

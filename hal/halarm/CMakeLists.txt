@@ -6,13 +6,14 @@ if(SARCH STREQUAL "virt")
         ${REACTOS_SOURCE_DIR}/hal/arch/common/include)
     foreach(HAL_TARGET hal halup)
         add_library(${HAL_TARGET} MODULE
-            virt/hal.c virt/spinlock.c virt/pnp.c virt/dma.c generic/profil.c
+            virt/hal.c virt/spinlock.c virt/pnp.c virt/dma.c virt/smp.c generic/profil.c
             ${REACTOS_SOURCE_DIR}/hal/arch/common/generic/dma_coherent.c
             exynos4210/cache.c
             ${REACTOS_SOURCE_DIR}/hal/arch/common/acpi/halpnpdd.c
             ${REACTOS_SOURCE_DIR}/hal/arch/common/acpi/tables.c
             ${CMAKE_CURRENT_BINARY_DIR}/hal.def)
         set_module_type(${HAL_TARGET} kerneldll ENTRYPOINT 0)
+        target_compile_definitions(${HAL_TARGET} PRIVATE CONFIG_SMP)
         target_link_libraries(${HAL_TARGET} halcommon libcntpr)
         add_importlibs(${HAL_TARGET} ntoskrnl)
         add_dependencies(${HAL_TARGET} xdk asm)

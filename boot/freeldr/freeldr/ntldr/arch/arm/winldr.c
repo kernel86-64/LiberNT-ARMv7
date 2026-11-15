@@ -64,7 +64,7 @@ ArmMapRange(ULONG Address, ULONG Physical, ULONG Pages, ULONGLONG Attributes)
     if (ArmShortDescriptors)
     {
         ULONG Flags = Attributes == ARM_LPAE_DEVICE ? ARM_SD_DEVICE :
-                      ARM_SD_EXECUTE | ARM_SD_WRITE_BACK | ARM_SD_NONSHAREABLE;
+                      ARM_SD_EXECUTE | ARM_SD_WRITE_BACK;
         while (Pages)
         {
             if (!((Address | Physical) & 0xfffff) && Pages >= 256 &&
@@ -299,6 +299,16 @@ WinLdrSetupMachineDependent(PLOADER_PARAMETER_BLOCK LoaderBlock)
         !ArmMapRange(ARM_VIRT_RTC_VIRTUAL, ArmExynos ? EXYNOS_RTC_PHYSICAL : ARM_VIRT_RTC_PHYSICAL,
                      1, ARM_LPAE_DEVICE))
         BugCheck("ARM special mapping failed");
+    if (ArmExynos && !ArmMapRange(ARM_VIRT_GIC_CPU1_VIRTUAL,
+                                  EXYNOS_BOOT_GIC_CPU + EXYNOS_BOOT_GIC_STRIDE,
+                                  1, ARM_LPAE_DEVICE))
+        BugCheck("Exynos secondary GIC mapping failed");
+    if (ArmExynos && !ArmMapRange(ARM_VIRT_GIC_DIST1_VIRTUAL,
+                                  EXYNOS_BOOT_GIC_DIST + EXYNOS_BOOT_GIC_STRIDE,
+                                  1, ARM_LPAE_DEVICE))
+        BugCheck("Exynos secondary distributor mapping failed");
+    if (ArmExynos && !ArmMapRange(ARM_VIRT_SCU_VIRTUAL, 0x10500000, 1, ARM_LPAE_DEVICE))
+        BugCheck("Exynos SCU mapping failed");
     if (ArmExynos)
     {
         if (!ArmMapRange(EXYNOS_MCT_VIRTUAL, EXYNOS_MCT_PHYSICAL, 1, ARM_LPAE_DEVICE) ||

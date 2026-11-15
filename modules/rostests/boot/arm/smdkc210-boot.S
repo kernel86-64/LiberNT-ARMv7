@@ -12,6 +12,9 @@
 .type SmdkBoot, %function
 SmdkBoot:
     cpsid if
+    mrc p15, 0, r0, c0, c0, 5
+    ands r0, r0, #0xff
+    bne SmdkSecondaryBoot
     ldr r0, =0x11c00000
     mov r1, #0
     str r1, [r0, #0x00]
@@ -39,3 +42,14 @@ SmdkBoot:
     mov r2, #0
     ldr pc, =0x40010000
 .size SmdkBoot, . - SmdkBoot
+
+.type SmdkSecondaryBoot, %function
+SmdkSecondaryBoot:
+    ldr r0, =0x10020814
+1:
+    ldr r1, [r0]
+    cmp r1, #0
+    beq 1b
+    dsb sy
+    bx r1
+.size SmdkSecondaryBoot, . - SmdkSecondaryBoot

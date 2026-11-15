@@ -40,6 +40,15 @@ VOID MiArmShortFailure(ULONG Code, ULONG64 Address, MI_PTE Value)
     (void)Code; (void)Address; (void)Value; abort();
 }
 
+static ULONG WalkEntry(ULONG Ttbr, ULONG Writer, ULONG Reader,
+                        const ULONG *Cached, const ULONG *Memory)
+{
+    ULONG Inner = ((Ttbr >> 6) & 1) | ((Ttbr & 1) << 1);
+
+    if ((Inner == 1 || Inner == 3) && (Writer == Reader || (Ttbr & 2))) return *Cached;
+    return *Memory;
+}
+
 int main(void)
 {
     PULONG Root = MiArchMapFrame(16), Table = MiArchMapFrame(32);
@@ -48,6 +57,13 @@ int main(void)
     ULONG Hardware, Saved, Before;
     ULONG64 Physical;
     BOOLEAN IsRoot;
+
+    ULONG Ttbr = MiArmShortTtbr(0x44460000);
+    ULONG Cached = 0, Memory = 0xe0000c7f;
+    assert((Ttbr & 0xffffc000) == 0x44460000);
+    for (ULONG Writer = 0; Writer < 2; ++Writer)
+        for (ULONG Reader = 0; Reader < 2; ++Reader)
+            assert(WalkEntry(Ttbr, Writer, Reader, &Cached, &Memory) == 0);
 
     Arch.PagingLevels = 2;
     Arch.PteBytes = 8;

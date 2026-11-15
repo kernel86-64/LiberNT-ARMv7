@@ -7,6 +7,7 @@
 
 #pragma once
 
+ULONG MiArmShortTtbr(ULONG Root);
 BOOLEAN MiArmShortEncodePte(MI_PTE Value, BOOLEAN Root, PULONG Hardware);
 BOOLEAN MiArmShortDecodePte(ULONG Hardware, BOOLEAN Root, PMI_PTE Value);
 

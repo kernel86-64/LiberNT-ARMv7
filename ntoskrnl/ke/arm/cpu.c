@@ -55,7 +55,7 @@ KeInvalidateRangeAllCaches(PVOID BaseAddress, ULONG Length)
         if (Last - Address < DLine)
             break;
     }
-    __asm__ __volatile__("dsb ish\n\tmcr p15, 0, %0, c7, c5, 0\n\tdsb ish\n\tisb"
+    __asm__ __volatile__("dsb ish\n\tmcr p15, 0, %0, c7, c1, 0\n\tdsb ish\n\tisb"
                          :: "r" (0) : "memory");
 }
 

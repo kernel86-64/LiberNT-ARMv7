@@ -13,45 +13,37 @@
 #include <arm/exynos4boot.h>
 #include <ndk/ketypes.h>
 
+static ULONG_PTR NTAPI
+ArmN7000MarkProcessor(ULONG_PTR Context)
+{
+    InterlockedOr((volatile LONG *)Context, 1UL << KeGetCurrentProcessorNumber());
+    return 0;
+}
+
 static VOID NTAPI
 ArmN7000Watch(PVOID Context)
 {
-    PKTHREAD Thread = Context;
+    PULONG Registers = Context;
     LARGE_INTEGER Delay;
     ULONG Index;
+
     Delay.QuadPart = -10000000;
-    for (Index = 0; Index < 8; ++Index)
+    for (Index = 0; Index < 120; ++Index)
     {
-        KIRQL OldIrql;
-        PKWAIT_BLOCK Block;
-        ULONG Frame, Depth;
+        if (READ_REGISTER_ULONG(Registers) != 0xff39 ||
+            READ_REGISTER_ULONG(Registers + 1) != 65535) break;
+        WRITE_REGISTER_ULONG(Registers + 2, 65535);
         KeDelayExecutionThread(KernelMode, FALSE, &Delay);
-        KeRaiseIrql(DISPATCH_LEVEL, &OldIrql);
-        if (Thread->State != Waiting)
-        {
-            DbgPrint("ARM N7000 watch state=%u\n", Thread->State);
-            KeLowerIrql(OldIrql);
-            continue;
-        }
-        Block = Thread->WaitBlockList;
-        DbgPrint("ARM N7000 watch state=%u reason=%u stack=%p apc=%d/%d object=%p type=%u\n",
-                 Thread->State, Thread->WaitReason, Thread->KernelStack,
-                 Thread->KernelApcDisable, Thread->SpecialApcDisable,
-                 Block ? Block->Object : NULL, Block ? ((PDISPATCHER_HEADER)Block->Object)->Type : 255);
-        Frame = ((ULONG_PTR)Thread->KernelStack >= Thread->StackLimit &&
-                 (ULONG_PTR)Thread->KernelStack <= (ULONG_PTR)Thread->StackBase - sizeof(KSWITCH_FRAME)) ?
-                ((PKSWITCH_FRAME)Thread->KernelStack)->R11 : 0;
-        for (Depth = 0; Depth < 12 && !(Frame & 3) && Frame >= Thread->StackLimit &&
-             Frame <= (ULONG_PTR)Thread->StackBase - 8; ++Depth)
-        {
-            PULONG Link = (PULONG)(ULONG_PTR)Frame;
-            DbgPrint("ARM N7000 wait frame %lu return=%08lx\n", Depth, Link[1]);
-            if (Link[0] <= Frame) break;
-            Frame = Link[0];
-        }
-        KeLowerIrql(OldIrql);
     }
-    ObDereferenceObject(Thread);
+    if (Index == 120)
+    {
+        volatile LONG Mask = 0;
+        KeIpiGenericCall(ArmN7000MarkProcessor, (ULONG_PTR)&Mask);
+        DbgPrint("ARM N7000 sustained SMP boot: %s (CPU mask=%lx, uptime=%I64u ms)\n",
+                 (KAFFINITY)Mask == KeQueryActiveProcessors() ? "PASS" : "FAIL",
+                 Mask, KeQueryInterruptTime() / 10000);
+    }
+    MmUnmapIoSpace(Registers, 12);
     PsTerminateSystemThread(STATUS_SUCCESS);
 }
 
@@ -132,6 +124,134 @@ ArmN7000ClockTest(VOID)
         PreviousTime = CurrentTime;
     }
     return PreviousTime > FirstTime ? STATUS_SUCCESS : STATUS_DATA_ERROR;
+}
+
+typedef struct _ARM_N7000_COHERENCY
+{
+    volatile LONG Request;
+    volatile LONG Acknowledge;
+    volatile ULONG Data[32];
+    NTSTATUS Status;
+    PVOID Code;
+} ARM_N7000_COHERENCY;
+
+extern const UCHAR ArmN7000CodeFirst[4], ArmN7000CodeSecond[4];
+
+__asm__(".pushsection .text,\"xr\"\n"
+        ".syntax unified\n.thumb\n.balign 2\n"
+        ".global ArmN7000CodeFirst\nArmN7000CodeFirst:\n"
+        "movs r0, #0x35\nbx lr\n"
+        ".global ArmN7000CodeSecond\nArmN7000CodeSecond:\n"
+        "movs r0, #0x6a\nbx lr\n.popsection\n");
+
+static VOID NTAPI
+ArmN7000CoherencyWorker(PVOID Context)
+{
+    ARM_N7000_COHERENCY *Probe = Context;
+    LARGE_INTEGER Start, Frequency;
+    ULONG Round, Index;
+    NTSTATUS Status = STATUS_SUCCESS;
+
+    KeSetSystemAffinityThread(2);
+    Start = KeQueryPerformanceCounter(&Frequency);
+    for (Round = 1; Round <= 256; ++Round)
+    {
+        while (InterlockedCompareExchange(&Probe->Request, 0, 0) != (LONG)Round)
+        {
+            if (KeQueryPerformanceCounter(NULL).QuadPart - Start.QuadPart > Frequency.QuadPart * 5)
+            {
+                Status = STATUS_IO_TIMEOUT;
+                goto Done;
+            }
+            YieldProcessor();
+        }
+        for (Index = 0; Index < RTL_NUMBER_OF(Probe->Data); ++Index)
+        {
+            if (Probe->Data[Index] != (Round ^ Index ^ 0x5a5aa5a5))
+            {
+                Status = STATUS_DATA_ERROR;
+                goto Done;
+            }
+            Probe->Data[Index] ^= MAXULONG;
+        }
+        {
+            ULONG Actual;
+            ULONG Expected = (Round & 1) ? 0x35 : 0x6a;
+            __asm__ __volatile__("isb" ::: "memory");
+            Actual = ((ULONG (NTAPI *)(VOID))((ULONG_PTR)Probe->Code | 1))();
+            if (Actual != Expected)
+            {
+                DbgPrint("ARM N7000 instruction coherency FAIL round=%lu expected=%lx actual=%lx cpu=%lu\n",
+                         Round, Expected, Actual, KeGetCurrentProcessorNumber());
+                Status = STATUS_DATA_ERROR;
+                goto Done;
+            }
+        }
+        InterlockedExchange(&Probe->Acknowledge, Round);
+    }
+Done:
+    Probe->Status = Status;
+    PsTerminateSystemThread(Status);
+}
+
+static NTSTATUS
+ArmN7000CoherencyTest(VOID)
+{
+    ARM_N7000_COHERENCY Probe = {0};
+    LARGE_INTEGER Start, Frequency;
+    HANDLE Worker;
+    ULONG Round, Index;
+    NTSTATUS Status;
+
+    if ((KeQueryActiveProcessors() & 3) != 3) return STATUS_SUCCESS;
+    Probe.Code = ExAllocatePoolWithTag(NonPagedPool, PAGE_SIZE, 'c7NA');
+    if (Probe.Code == NULL) return STATUS_INSUFFICIENT_RESOURCES;
+    KeSetSystemAffinityThread(1);
+    Status = PsCreateSystemThread(&Worker, THREAD_ALL_ACCESS, NULL, NULL, NULL,
+                                   ArmN7000CoherencyWorker, &Probe);
+    if (!NT_SUCCESS(Status)) goto Restore;
+    Start = KeQueryPerformanceCounter(&Frequency);
+    for (Round = 1; Round <= 256; ++Round)
+    {
+        RtlCopyMemory(Probe.Code, (PVOID)((ULONG_PTR)((Round & 1) ?
+                      ArmN7000CodeFirst : ArmN7000CodeSecond) & ~(ULONG_PTR)1), 4);
+        KeInvalidateRangeAllCaches(Probe.Code, 4);
+        for (Index = 0; Index < RTL_NUMBER_OF(Probe.Data); ++Index)
+            Probe.Data[Index] = Round ^ Index ^ 0x5a5aa5a5;
+        InterlockedExchange(&Probe.Request, Round);
+        while (InterlockedCompareExchange(&Probe.Acknowledge, 0, 0) != (LONG)Round)
+        {
+            if (KeQueryPerformanceCounter(NULL).QuadPart - Start.QuadPart > Frequency.QuadPart * 5)
+            {
+                Status = STATUS_IO_TIMEOUT;
+                goto Join;
+            }
+            YieldProcessor();
+        }
+        for (Index = 0; Index < RTL_NUMBER_OF(Probe.Data); ++Index)
+        {
+            if (Probe.Data[Index] != ((Round ^ Index ^ 0x5a5aa5a5) ^ MAXULONG))
+            {
+                Status = STATUS_DATA_ERROR;
+                goto Join;
+            }
+        }
+    }
+Join:
+    ZwWaitForSingleObject(Worker, FALSE, NULL);
+    ZwClose(Worker);
+    if (!NT_SUCCESS(Probe.Status)) Status = Probe.Status;
+    if (NT_SUCCESS(Status)) DbgPrint("ARM N7000 instruction coherency: PASS (256 updates CPU0 to CPU1)\n");
+    if (NT_SUCCESS(Status))
+    {
+        volatile LONG Mask = 0;
+        KeIpiGenericCall(ArmN7000MarkProcessor, (ULONG_PTR)&Mask);
+        if (Mask != 3) Status = STATUS_DATA_ERROR;
+    }
+Restore:
+    KeRevertToUserAffinityThread();
+    ExFreePoolWithTag(Probe.Code, 'c7NA');
+    return Status;
 }
 
 static NTSTATUS
@@ -273,6 +393,66 @@ ArmN7000ProcessorNameTest(VOID)
     return STATUS_SUCCESS;
 }
 
+static NTSTATUS
+ArmN7000PageWalkTest(KAFFINITY Affinity)
+{
+    PHYSICAL_ADDRESS Highest, Physical;
+    PUCHAR Allocation;
+    PULONG Table;
+    volatile ULONG *Child;
+    ULONG Root, Control, Ctr, Line, Offset, NewRoot, Translation, Zero = 0;
+    ULONG Index;
+    KIRQL OldIrql;
+
+    __asm__ __volatile__("mrc p15, 0, %0, c2, c0, 2" : "=r"(Control));
+    if (Control != 0) return STATUS_NOT_SUPPORTED;
+    KeSetSystemAffinityThread(Affinity);
+    Highest.QuadPart = MAXULONG;
+    Allocation = MmAllocateContiguousMemory(65536, Highest);
+    if (!Allocation)
+    {
+        KeRevertToUserAffinityThread();
+        return STATUS_INSUFFICIENT_RESOURCES;
+    }
+    Physical = MmGetPhysicalAddress(Allocation);
+    Offset = (-(ULONG)Physical.LowPart) & 0x3fff;
+    Table = (PVOID)(Allocation + Offset);
+    Child = (PVOID)(Allocation + 32768);
+    KeRaiseIrql(HIGH_LEVEL, &OldIrql);
+    __asm__ __volatile__("mrc p15, 0, %0, c2, c0, 0" : "=r"(Root));
+    RtlCopyMemory(Table, (PVOID)((Root & 0xffffc000) | 0x80000000), 16384);
+    Table[0x100] = (Physical.LowPart + 32768) | 1;
+    for (Index = 0; Index < 256; ++Index) Child[Index] = 0xe0000c7f;
+    __asm__ __volatile__("mrc p15, 0, %0, c0, c0, 1" : "=r"(Ctr));
+    Line = 4UL << ((Ctr >> 16) & 15);
+    __asm__ __volatile__("dsb sy" ::: "memory");
+    for (Index = 0; Index < 16384; Index += Line)
+        __asm__ __volatile__("mcr p15, 0, %0, c7, c10, 1" :: "r"((PUCHAR)Table + Index) : "memory");
+    for (Index = 0; Index < 1024; Index += Line)
+        __asm__ __volatile__("mcr p15, 0, %0, c7, c10, 1" :: "r"((PUCHAR)Child + Index) : "memory");
+    __asm__ __volatile__("dsb sy" ::: "memory");
+    for (Index = 256; Index != 0;) Child[--Index] = 0;
+    NewRoot = (Physical.LowPart + Offset) | (Root & 0x7f);
+    __asm__ __volatile__(
+        "dsb sy\n\t"
+        "mcr p15, 0, %[next], c2, c0, 0\n\tisb\n\t"
+        "mcr p15, 0, %[zero], c8, c7, 0\n\tdsb sy\n\tisb\n\t"
+        "mcr p15, 0, %[address], c7, c8, 0\n\tisb\n\t"
+        "mrc p15, 0, %[par], c7, c4, 0\n\t"
+        "dsb sy\n\tmcr p15, 0, %[previous], c2, c0, 0\n\tisb\n\t"
+        "mcr p15, 0, %[zero], c8, c7, 0\n\tdsb sy\n\tisb"
+        : [par] "=&r"(Translation)
+        : [next] "r"(NewRoot), [previous] "r"(Root),
+          [address] "r"(0x10000000), [zero] "r"(Zero)
+        : "memory");
+    KeLowerIrql(OldIrql);
+    DbgPrint("ARM N7000 page walk: cpu=%lu TTBR=%08lx cached PTE=%08lx PAR=%08lx\n",
+             KeGetCurrentProcessorNumber(), Root, Child[0], Translation);
+    MmFreeContiguousMemory(Allocation);
+    KeRevertToUserAffinityThread();
+    return (Translation & 1) ? STATUS_SUCCESS : STATUS_DATA_ERROR;
+}
+
 static VOID NTAPI
 ArmN7000Reinitialize(PDRIVER_OBJECT DriverObject, PVOID Context, ULONG Count)
 {
@@ -281,18 +461,14 @@ ArmN7000Reinitialize(PDRIVER_OBJECT DriverObject, PVOID Context, ULONG Count)
     UNREFERENCED_PARAMETER(Context);
     UNREFERENCED_PARAMETER(Count);
 
-    {
-        HANDLE Watch;
-        PKTHREAD Thread = KeGetCurrentThread();
-        ObReferenceObject(Thread);
-        Status = PsCreateSystemThread(&Watch, THREAD_ALL_ACCESS, NULL, NULL, NULL, ArmN7000Watch, Thread);
-        if (NT_SUCCESS(Status)) ZwClose(Watch);
-        else ObDereferenceObject(Thread);
-    }
-
     Status = ArmN7000ProcessorNameTest();
     DbgPrint("ARM N7000 processor name tests: %s (0x%08lx)\n",
              NT_SUCCESS(Status) ? "PASS" : "FAIL", Status);
+    if (NT_SUCCESS(Status)) Status = ArmN7000PageWalkTest(1);
+    if (NT_SUCCESS(Status) && KeQueryActiveProcessorCount(NULL) > 1) Status = ArmN7000PageWalkTest(2);
+    DbgPrint("ARM N7000 page-walk visibility tests: %s (0x%08lx)\n", NT_SUCCESS(Status) ? "PASS" : "FAIL", Status);
+    if (NT_SUCCESS(Status)) Status = ArmN7000CoherencyTest();
+    DbgPrint("ARM N7000 coherency tests: %s (0x%08lx)\n", NT_SUCCESS(Status) ? "PASS" : "FAIL", Status);
     if (NT_SUCCESS(Status)) Status = ArmN7000ClockTest();
     DbgPrint("ARM N7000 clock tests: %s (0x%08lx)\n", NT_SUCCESS(Status) ? "PASS" : "FAIL", Status);
     if (NT_SUCCESS(Status)) Status = ArmN7000RtcTest();
@@ -306,9 +482,30 @@ DriverEntry(PDRIVER_OBJECT DriverObject, PUNICODE_STRING RegistryPath)
 {
     NTSTATUS Status;
     UNREFERENCED_PARAMETER(RegistryPath);
+    {
+        PHYSICAL_ADDRESS Address;
+        PULONG Registers;
+        HANDLE Watch;
+
+        Address.QuadPart = 0x10060000;
+        Registers = MmMapIoSpace(Address, 12, MmNonCached);
+        if (Registers)
+        {
+            if (READ_REGISTER_ULONG(Registers) == 0xff39 &&
+                READ_REGISTER_ULONG(Registers + 1) == 65535)
+            {
+                WRITE_REGISTER_ULONG(Registers + 2, 65535);
+                Status = PsCreateSystemThread(&Watch, THREAD_ALL_ACCESS, NULL, NULL, NULL,
+                                              ArmN7000Watch, Registers);
+                if (NT_SUCCESS(Status)) ZwClose(Watch);
+                else MmUnmapIoSpace(Registers, 12);
+            }
+            else MmUnmapIoSpace(Registers, 12);
+        }
+    }
     Status = ArmN7000CacheTest();
     DbgPrint("ARM N7000 ACPI cache tests: %s (0x%08lx)\n",
               NT_SUCCESS(Status) ? "PASS" : "FAIL", Status);
     if (NT_SUCCESS(Status)) IoRegisterBootDriverReinitialization(DriverObject, ArmN7000Reinitialize, NULL);
-    return Status;
+    return STATUS_SUCCESS;
 }

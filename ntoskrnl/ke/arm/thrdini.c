@@ -200,9 +200,16 @@ KiDispatchInterrupt(VOID)
     {
         /* Acquire the PRCB lock */
         KiAcquirePrcbLock(Prcb);
+        _disable();
 
         /* Capture current thread data */
         OldThread = Prcb->CurrentThread;
+        if (!Prcb->NextThread || KiConsumeSelfNextThread(Prcb, OldThread))
+        {
+            KiReleasePrcbLock(Prcb);
+            _enable();
+            return;
+        }
         NewThread = Prcb->NextThread;
 
         /* Set new thread data */

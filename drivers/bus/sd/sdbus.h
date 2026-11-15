@@ -553,6 +553,10 @@ BOOLEAN
 SdBusIsCachedGetRequest(
     _In_ PSDBUS_REQUEST_PACKET RequestPacket);
 
+VOID
+SdBusResetCommandInterrupts(
+    _In_ PFDO_EXTENSION FdoExtension);
+
 /**
  * @brief Wait for SDHCI interrupt bits via the ISR-driven completion event.
  *
@@ -837,6 +841,9 @@ SdBusResetHost(
 ULONG
 SdBusHardwareAdjustPresentState(PFDO_EXTENSION FdoExtension, ULONG State);
 
+ULONG
+SdBusHardwareAdjustInterruptSignalEnable(PFDO_EXTENSION FdoExtension, ULONG Enable);
+
 static __inline ULONG
 SdBusReadReg32(
     _In_ PFDO_EXTENSION FdoExtension,
@@ -860,6 +867,8 @@ SdBusWriteReg32(
     _In_ ULONG Register,
     _In_ ULONG Value)
 {
+    if (Register == SDHCI_INT_SIGNAL_ENABLE)
+        Value = SdBusHardwareAdjustInterruptSignalEnable(FdoExtension, Value);
     SDHCI_WRITE32(FdoExtension->RegisterBase, Register, Value);
 }
 

@@ -51,6 +51,17 @@ HalpEnableInterruptHandler(IN UCHAR Flags,
 VOID HalpInitPhase0 (PLOADER_PARAMETER_BLOCK LoaderBlock);
 VOID HalpInitPhase1(VOID);
 
+extern BOOLEAN HalpExynos;
+
+ULONG HalpArmGicCpuBase(ULONG ProcessorNumber);
+ULONG HalpArmGicDistBase(ULONG ProcessorNumber);
+ULONG HalpArmProcessorCount(VOID);
+ULONG HalpArmProcessorGicId(ULONG ProcessorNumber);
+VOID HalpArmInitializeProcessor(ULONG ProcessorNumber);
+VOID HalpArmInitializeSmp(PLOADER_PARAMETER_BLOCK LoaderBlock);
+VOID HalpArmSendSgi(ULONG TargetList, ULONG Sgi);
+VOID HalpArmSendClockIpi(VOID);
+
 VOID HalpInitializeInterrupts(VOID);
 VOID HalpInitializeClock(VOID);
 VOID HalpClockInterrupt(VOID);

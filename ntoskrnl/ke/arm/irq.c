@@ -26,15 +26,25 @@ VOID KiInterruptHandler(PKTRAP_FRAME TrapFrame, ULONG Reserved)
     BOOLEAN Handled;
 
     UNREFERENCED_PARAMETER(Reserved);
+
     if (Source >= 1020)
         return;
     Level = KiArmGetInterruptIrql(Source);
+    if (Level < OldIrql)
+    {
+        if (Source <= 1)
+        {
+            HalEndSystemInterrupt(OldIrql, TrapFrame);
+            return;
+        }
+    }
     KeGetCurrentPrcb()->InterruptCount++;
     TrapFrame->PreviousIrql = OldIrql;
     KfRaiseIrql(Level);
     Thread = KeGetCurrentThread();
     OldTrap = Thread->TrapFrame;
     Thread->TrapFrame = TrapFrame;
+
     if (Source <= 1)
     {
         HalClearSoftwareInterrupt(Level);
@@ -49,14 +59,23 @@ VOID KiInterruptHandler(PKTRAP_FRAME TrapFrame, ULONG Reserved)
             KiApcInterrupt();
         _disable();
     }
+    else if (Source == KI_ARM_SGI_IPI)
+    {
+        KiIpiServiceRoutine(TrapFrame, NULL);
+        HalEndSystemInterrupt(Level, TrapFrame);
+    }
+    else if (Source == KI_ARM_SGI_CLOCK)
+    {
+        HalClearSoftwareInterrupt(Level);
+        KeUpdateRunTime(TrapFrame, OldIrql);
+        HalEndSystemInterrupt(Level, TrapFrame);
+    }
     else
     {
         Handled = HalpArmDispatchInterrupt(Source, TrapFrame);
         if (!Handled)
             Handled = KeDispatchSecondaryInterrupt(Source, 0, NULL);
         HalEndSystemInterrupt(Level, TrapFrame);
-        if (!Handled)
-            KeBugCheckEx(UNEXPECTED_KERNEL_MODE_TRAP, Source, (ULONG_PTR)TrapFrame, 0, 0);
     }
     Thread->TrapFrame = OldTrap;
     KfLowerIrql(OldIrql);

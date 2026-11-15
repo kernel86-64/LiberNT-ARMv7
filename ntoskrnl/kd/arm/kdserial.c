@@ -26,7 +26,8 @@ static BOOLEAN KdExynosEarlyLog;
 VOID KiArmInitializeEarlyDebug(PLOADER_PARAMETER_BLOCK LoaderBlock)
 {
     UNREFERENCED_PARAMETER(LoaderBlock);
-    KdExynosEarlyLog = ExynosBootLogMapped();
+    if (!KdExynosEarlyLog)
+        KdExynosEarlyLog = ExynosBootLogMapped();
     if (KdExynosEarlyLog)
         ExynosBootMessage(EXYNOS_BOOT_LOG_VIRTUAL, "LiberNT kernel: entry reached\n");
 }

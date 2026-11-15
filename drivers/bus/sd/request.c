@@ -102,6 +102,35 @@ typedef struct _SDBUS_INTERRUPT_CAPTURE_CONTEXT {
 
 static BOOLEAN
 NTAPI
+SdBusResetCommandInterruptsSynchronized(
+    _In_ PVOID Context)
+{
+    PFDO_EXTENSION FdoExtension = Context;
+
+    SdBusWriteReg32(FdoExtension, SDHCI_INT_STATUS, SDHCI_INT_ALL_MASK);
+    InterlockedExchange(&FdoExtension->CommandInterruptStatus, 0);
+    return TRUE;
+}
+
+VOID
+SdBusResetCommandInterrupts(
+    _In_ PFDO_EXTENSION FdoExtension)
+{
+    KeClearEvent(&FdoExtension->CommandEvent);
+    if (FdoExtension->InterruptObject != NULL)
+    {
+        KeSynchronizeExecution(FdoExtension->InterruptObject,
+                               SdBusResetCommandInterruptsSynchronized,
+                               FdoExtension);
+    }
+    else
+    {
+        SdBusResetCommandInterruptsSynchronized(FdoExtension);
+    }
+}
+
+static BOOLEAN
+NTAPI
 SdBusCaptureInterruptStatusSynchronized(
     _In_ PVOID Context)
 {
@@ -179,12 +208,15 @@ SdBusWaitForInterrupt(
     ULONG RemainingMs;
     ULONG ErrorMask;
     ULONG MatchMask;
+    ULONG BufferMask;
     ULONG Spin;
 
     RemainingMs = TimeoutMs;
     ErrorMask = ErrorBits != 0 ?
         (SDHCI_INT_ERROR | SDHCI_INT_ERROR_MASK) : 0;
     MatchMask = WantedBits | ErrorMask;
+    BufferMask = WantedBits == SDHCI_INT_BUFFER_READ_READY ? SDHCI_PS_BUFFER_READ_ENABLE :
+                 WantedBits == SDHCI_INT_BUFFER_WRITE_READY ? SDHCI_PS_BUFFER_WRITE_ENABLE : 0;
 
     Spin = 100;
 
@@ -196,29 +228,19 @@ SdBusWaitForInterrupt(
         if (Match)
         {
             InterlockedAnd(&FdoExtension->CommandInterruptStatus, ~(LONG)Match);
-            *ResultBits = Match;
-            if (Match & ErrorMask)
-            {
-                return STATUS_IO_DEVICE_ERROR;
-            }
-            if (Match & WantedBits)
-            {
-                return STATUS_SUCCESS;
-            }
         }
 
-        Match = SdBusCaptureInterruptStatus(FdoExtension, MatchMask);
-        if (Match)
+        Match |= SdBusCaptureInterruptStatus(FdoExtension, MatchMask);
+        if (Match & ErrorMask)
         {
             *ResultBits = Match;
-            if (Match & ErrorMask)
-            {
-                return STATUS_IO_DEVICE_ERROR;
-            }
-            if (Match & WantedBits)
-            {
-                return STATUS_SUCCESS;
-            }
+            return STATUS_IO_DEVICE_ERROR;
+        }
+        if (BufferMask ? (SdBusReadReg32(FdoExtension, SDHCI_PRESENT_STATE) & BufferMask) != 0 :
+                         (Match & WantedBits) != 0)
+        {
+            *ResultBits = Match | (BufferMask ? WantedBits : 0);
+            return STATUS_SUCCESS;
         }
 
         if (Spin != 0)
@@ -1188,9 +1210,7 @@ SdBusSendSdhciCommand(
     }
 
     /* Step 2: Clear pending command/data interrupt state for this new command */
-    InterlockedExchange(&FdoExtension->CommandInterruptStatus, 0);
-    KeClearEvent(&FdoExtension->CommandEvent);
-    SdBusWriteReg32(FdoExtension, SDHCI_INT_STATUS, SDHCI_INT_ALL_MASK);
+    SdBusResetCommandInterrupts(FdoExtension);
 
     /* Build ADMA2 descriptor table for this transfer */
     if (TransferPath == SdTransferPathAdma2)

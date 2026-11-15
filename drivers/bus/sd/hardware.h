@@ -29,6 +29,8 @@ typedef struct _SDBUS_HARDWARE_OPS
                                        _In_ BOOLEAN Enable);
     ULONG (*AdjustPresentState)(_In_ PFDO_EXTENSION FdoExtension,
                                _In_ ULONG State);
+    ULONG (*AdjustInterruptSignalEnable)(_In_ PFDO_EXTENSION FdoExtension,
+                                         _In_ ULONG Enable);
 } SDBUS_HARDWARE_OPS, *PSDBUS_HARDWARE_OPS;
 
 typedef struct _SDBUS_HARDWARE_EXTENSION

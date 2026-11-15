@@ -23,11 +23,22 @@
 
 static ULONG HalpInterruptCount;
 static ULONG HalpIncrement = 100000;
-static ULONG HalpInterruptToken;
+static ULONG HalpInterruptToken[2][HIGH_LEVEL + 1];
+static ULONG HalpInterruptDepth[2];
 static ULONG HalpTimerFrequency;
 static ULONG HalpTimerIncrement;
 static ULONGLONG HalpTimerDeadline;
-static BOOLEAN HalpExynos;
+BOOLEAN HalpExynos;
+
+ULONG HalpArmGicCpuBase(ULONG ProcessorNumber)
+{
+    return ARM_VIRT_GIC_CPU_VIRTUAL + (HalpExynos ? ProcessorNumber * PAGE_SIZE : 0);
+}
+
+ULONG HalpArmGicDistBase(ULONG ProcessorNumber)
+{
+    return ARM_VIRT_GIC_DIST_VIRTUAL + (HalpExynos ? ProcessorNumber * PAGE_SIZE : 0);
+}
 
 static ULONG HalpClockVector(VOID)
 {
@@ -87,10 +98,12 @@ KIRQL NTAPI KeGetCurrentIrql(VOID)
 static VOID HalpSetIrql(KIRQL Irql)
 {
     ULONG Cpsr;
+    ULONG Cpu;
 
     __asm__ __volatile__("mrs %0, cpsr\n\tcpsid i" : "=r" (Cpsr) :: "memory");
+    Cpu = KeGetCurrentProcessorNumber();
+    HalpWrite(HalpArmGicCpuBase(Cpu), 4, Irql == 0 ? 0xFF : ((15 - Irql) << 4));
     KeGetPcr()->CurrentIrql = Irql;
-    HalpWrite(ARM_VIRT_GIC_CPU_VIRTUAL, 4, Irql == 0 ? 0xFF : ((15 - Irql) << 4));
     __asm__ __volatile__("isb" ::: "memory");
     __asm__ __volatile__("msr cpsr_c, %0" :: "r" (Cpsr) : "memory");
 }
@@ -98,8 +111,11 @@ static VOID HalpSetIrql(KIRQL Irql)
 KIRQL FASTCALL KfRaiseIrql(KIRQL NewIrql)
 {
     KIRQL OldIrql = KeGetCurrentIrql();
-    if (NewIrql < OldIrql || NewIrql > HIGH_LEVEL)
-        KeBugCheckEx(IRQL_NOT_GREATER_OR_EQUAL, OldIrql, NewIrql, 0, 0);
+
+    if (NewIrql > HIGH_LEVEL)
+        KeBugCheckEx(IRQL_NOT_GREATER_OR_EQUAL, NewIrql, OldIrql, 0, 0);
+    if (NewIrql <= OldIrql)
+        return OldIrql;
     HalpSetIrql(NewIrql);
     return OldIrql;
 }
@@ -113,29 +129,29 @@ VOID FASTCALL KfLowerIrql(KIRQL NewIrql)
 }
 
 KIRQL NTAPI KeRaiseIrqlToDpcLevel(VOID) { return KfRaiseIrql(DISPATCH_LEVEL); }
-KIRQL NTAPI KeRaiseIrqlToSynchLevel(VOID) { return KfRaiseIrql(DISPATCH_LEVEL); }
+KIRQL NTAPI KeRaiseIrqlToSynchLevel(VOID) { return KfRaiseIrql(SYNCH_LEVEL); }
 
 VOID NTAPI HalInitializeProcessor(ULONG ProcessorNumber, PLOADER_PARAMETER_BLOCK LoaderBlock)
 {
     ULONG Index;
     HalpExynos = ExynosBootLogMapped();
-    if (ProcessorNumber != 0)
-        KeBugCheckEx(HAL_INITIALIZATION_FAILED, ProcessorNumber, 0, 0, 0);
-    HalpWrite(ARM_VIRT_GIC_CPU_VIRTUAL, 0, 0);
-    HalpWrite(ARM_VIRT_GIC_DIST_VIRTUAL, 0, 0);
-    HalpInterruptCount = ((HalpRead(ARM_VIRT_GIC_DIST_VIRTUAL, 4) & 31) + 1) * 32;
-    for (Index = 0; Index < HalpInterruptCount; Index += 32)
+    if (ProcessorNumber == 0)
     {
-        HalpWrite(ARM_VIRT_GIC_DIST_VIRTUAL, 0x180 + Index / 8, ~0UL);
-        HalpWrite(ARM_VIRT_GIC_DIST_VIRTUAL, 0x280 + Index / 8, ~0UL);
+        HalpWrite(ARM_VIRT_GIC_DIST_VIRTUAL, 0, 0);
+        HalpInterruptCount = ((HalpRead(ARM_VIRT_GIC_DIST_VIRTUAL, 4) & 31) + 1) * 32;
+        for (Index = 0; Index < HalpInterruptCount; Index += 32)
+        {
+            HalpWrite(ARM_VIRT_GIC_DIST_VIRTUAL, 0x180 + Index / 8, ~0UL);
+            HalpWrite(ARM_VIRT_GIC_DIST_VIRTUAL, 0x280 + Index / 8, ~0UL);
+        }
+        for (Index = 0; Index < HalpInterruptCount; Index += 4)
+            HalpWrite(ARM_VIRT_GIC_DIST_VIRTUAL, 0x400 + Index, 0xA0A0A0A0);
+        HalpWrite(ARM_VIRT_GIC_DIST_VIRTUAL, 0x400, 0xA010E0D0);
     }
-    for (Index = 0; Index < HalpInterruptCount; Index += 4)
-        HalpWrite(ARM_VIRT_GIC_DIST_VIRTUAL, 0x400 + Index, 0xA0A0A0A0);
-    HalpWrite(ARM_VIRT_GIC_DIST_VIRTUAL, 0x400, 0xA0A0E0D0);
-    HalpWrite(ARM_VIRT_GIC_CPU_VIRTUAL, 8, 0);
+    HalpArmInitializeProcessor(ProcessorNumber);
     HalpSetIrql(KeGetCurrentIrql());
-    HalpWrite(ARM_VIRT_GIC_DIST_VIRTUAL, 0, 1);
-    HalpWrite(ARM_VIRT_GIC_CPU_VIRTUAL, 0, 1);
+    if (ProcessorNumber == 0)
+        HalpWrite(ARM_VIRT_GIC_DIST_VIRTUAL, 0, 1);
 }
 
 BOOLEAN NTAPI HalInitSystem(ULONG BootPhase, PLOADER_PARAMETER_BLOCK LoaderBlock)
@@ -143,6 +159,8 @@ BOOLEAN NTAPI HalInitSystem(ULONG BootPhase, PLOADER_PARAMETER_BLOCK LoaderBlock
     UNREFERENCED_PARAMETER(LoaderBlock);
     if (BootPhase > 1)
         return FALSE;
+    if (KeGetCurrentProcessorNumber() != 0)
+        return TRUE;
     if (BootPhase == 0)
     {
         HalGetDmaAdapter = HalpArmGetDmaAdapter;
@@ -157,6 +175,8 @@ BOOLEAN NTAPI HalInitSystem(ULONG BootPhase, PLOADER_PARAMETER_BLOCK LoaderBlock
             HalGetCachedAcpiTable = HaliGetCachedAcpiTable;
             HalInitPnpDriver = HaliInitPnpDriver;
         }
+        if (KeGetCurrentProcessorNumber() == 0)
+            HalpArmInitializeSmp(LoaderBlock);
     }
     else
     {
@@ -186,20 +206,48 @@ VOID NTAPI HalProcessorIdle(VOID) { __asm__ __volatile__("dsb sy\n\tcpsie i\n\tw
 
 VOID FASTCALL HalRequestSoftwareInterrupt(KIRQL Irql)
 {
+    ULONG Cpu;
+    ULONG GicId;
+
     if (Irql == DISPATCH_LEVEL || Irql == APC_LEVEL)
-        HalpWrite(ARM_VIRT_GIC_DIST_VIRTUAL, 0xF00, (2UL << 24) | (Irql == APC_LEVEL));
+    {
+        Cpu = KeGetCurrentProcessorNumber();
+        GicId = HalpArmProcessorGicId(Cpu);
+        HalpArmSendSgi(1UL << (GicId & 0x1F), Irql == APC_LEVEL);
+    }
 }
 
 VOID FASTCALL HalClearSoftwareInterrupt(KIRQL Irql)
 {
-    if (Irql == DISPATCH_LEVEL || Irql == APC_LEVEL)
-        HalpWrite(ARM_VIRT_GIC_DIST_VIRTUAL, 0xF10, 0xFFUL << (Irql == APC_LEVEL ? 8 : 0));
+    ULONG Sgi;
+    ULONG Distributor;
+
+    if (Irql == DISPATCH_LEVEL)
+        Sgi = 0;
+    else if (Irql == APC_LEVEL)
+        Sgi = 1;
+    else if (Irql == 5)
+        Sgi = 3;
+    else
+        return;
+    Distributor = HalpArmGicDistBase(KeGetCurrentProcessorNumber());
+    if ((HalpRead(Distributor, 0xFE8) & 0xF0) < 0x20)
+        return;
+    HalpWrite(Distributor, 0xF10 + (Sgi / 4) * 4, 0xFFUL << ((Sgi % 4) * 8));
 }
 
 ULONG FASTCALL HalGetInterruptSource(VOID)
 {
-    HalpInterruptToken = HalpRead(ARM_VIRT_GIC_CPU_VIRTUAL, 0xC);
-    return HalpInterruptToken & 0x3FF;
+    ULONG Cpu = KeGetCurrentProcessorNumber();
+    ULONG Token = HalpRead(HalpArmGicCpuBase(Cpu), 0xC);
+
+    if ((Token & 0x3FF) < 1020)
+    {
+        if (HalpInterruptDepth[Cpu] >= RTL_NUMBER_OF(HalpInterruptToken[Cpu]))
+            KeBugCheckEx(TRAP_CAUSE_UNKNOWN, Token, Cpu, HalpInterruptDepth[Cpu], 0);
+        HalpInterruptToken[Cpu][HalpInterruptDepth[Cpu]++] = Token;
+    }
+    return Token & 0x3FF;
 }
 
 KIRQL NTAPI HalpArmGetInterruptIrql(ULONG Source)
@@ -208,6 +256,10 @@ KIRQL NTAPI HalpArmGetInterruptIrql(ULONG Source)
         return DISPATCH_LEVEL;
     if (Source == 1)
         return APC_LEVEL;
+    if (Source == 2)
+        return IPI_LEVEL;
+    if (Source == 3)
+        return 5;
     return Source == HalpClockVector() ? CLOCK_LEVEL : 5;
 }
 
@@ -244,15 +296,24 @@ BOOLEAN NTAPI HalpArmDispatchInterrupt(ULONG Source, PKTRAP_FRAME TrapFrame)
         Now = KeQueryPerformanceCounter(NULL).QuadPart;
         HalpSetTimerDeadline((LONG64)(Now - HalpTimerDeadline) >= 0 ? Now + Period : HalpTimerDeadline);
     }
+    HalpArmSendClockIpi();
     return TRUE;
 }
 
 VOID NTAPI HalEndSystemInterrupt(KIRQL OldIrql, PKTRAP_FRAME TrapFrame)
 {
+    ULONG Cpu, Cpsr;
+
     UNREFERENCED_PARAMETER(TrapFrame);
-    if ((HalpInterruptToken & 0x3FF) < 1020)
-        HalpWrite(ARM_VIRT_GIC_CPU_VIRTUAL, 0x10, HalpInterruptToken);
+    __asm__ __volatile__("mrs %0, cpsr\n\tcpsid i" : "=r" (Cpsr) :: "memory");
+    Cpu = KeGetCurrentProcessorNumber();
+    if (HalpInterruptDepth[Cpu])
+    {
+        ULONG Token = HalpInterruptToken[Cpu][--HalpInterruptDepth[Cpu]];
+        HalpWrite(HalpArmGicCpuBase(Cpu), 0x10, Token);
+    }
     KfLowerIrql(OldIrql);
+    __asm__ __volatile__("msr cpsr_c, %0" :: "r" (Cpsr) : "memory");
 }
 
 BOOLEAN NTAPI HalEnableSystemInterrupt(ULONG Vector, KIRQL Irql, KINTERRUPT_MODE Mode)
@@ -266,6 +327,7 @@ BOOLEAN NTAPI HalEnableSystemInterrupt(ULONG Vector, KIRQL Irql, KINTERRUPT_MODE
     HalpWrite(ARM_VIRT_GIC_DIST_VIRTUAL, 0x400 + (Vector & ~3), Value);
     if (Vector >= 32)
     {
+        Shift = (Vector % 4) * 8;
         Value = HalpRead(ARM_VIRT_GIC_DIST_VIRTUAL, 0x800 + (Vector & ~3));
         Value = (Value & ~(0xFFUL << Shift)) | (1UL << Shift);
         HalpWrite(ARM_VIRT_GIC_DIST_VIRTUAL, 0x800 + (Vector & ~3), Value);
@@ -279,6 +341,8 @@ BOOLEAN NTAPI HalEnableSystemInterrupt(ULONG Vector, KIRQL Irql, KINTERRUPT_MODE
             Value |= 2UL << Shift;
         HalpWrite(ARM_VIRT_GIC_DIST_VIRTUAL, 0xC00 + (Vector / 16) * 4, Value);
     }
+    HalpWrite(ARM_VIRT_GIC_DIST_VIRTUAL, 0x280 + (Vector / 32) * 4,
+              1UL << (Vector % 32));
     HalpWrite(ARM_VIRT_GIC_DIST_VIRTUAL, 0x100 + (Vector / 32) * 4, 1UL << (Vector % 32));
     return TRUE;
 }

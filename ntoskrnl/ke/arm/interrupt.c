@@ -15,6 +15,7 @@
 /* FUNCTIONS ******************************************************************/
 
 static PKINTERRUPT KiArmInterrupts[1024];
+static KSPIN_LOCK KiArmInterruptLock;
 
 KIRQL KiArmGetInterruptIrql(ULONG Vector)
 {
@@ -83,14 +84,15 @@ KeConnectInterrupt(PKINTERRUPT Interrupt)
     KIRQL OldIrql;
     BOOLEAN Result = FALSE;
 
-    if (Interrupt->Number != 0 || KeGetCurrentProcessorNumber() != 0 ||
-        Interrupt->Vector < 32 || Interrupt->Vector >= 1020 || !Interrupt->ServiceRoutine)
+    if (Interrupt->Number != 0 || Interrupt->Vector < 32 ||
+        Interrupt->Vector >= 1020 || !Interrupt->ServiceRoutine)
         return FALSE;
     if (Interrupt->Irql == PASSIVE_LEVEL) return KiConnectPassiveInterrupt(Interrupt);
     if (Interrupt->Irql <= DISPATCH_LEVEL || Interrupt->Irql >= HIGH_LEVEL ||
         Interrupt->SynchronizeIrql < Interrupt->Irql || Interrupt->SynchronizeIrql > HIGH_LEVEL)
         return FALSE;
     OldIrql = KfRaiseIrql(HIGH_LEVEL);
+    KeAcquireSpinLockAtDpcLevel(&KiArmInterruptLock);
     if (Interrupt->Connected) goto Done;
     Head = KiArmInterrupts[Interrupt->Vector];
     if (Head)
@@ -114,6 +116,7 @@ KeConnectInterrupt(PKINTERRUPT Interrupt)
     KeMemoryBarrier();
     Result = TRUE;
 Done:
+    KeReleaseSpinLockFromDpcLevel(&KiArmInterruptLock);
     KfLowerIrql(OldIrql);
     return Result;
 }
@@ -126,11 +129,11 @@ KeDisconnectInterrupt(PKINTERRUPT Interrupt)
     KIRQL OldIrql;
     BOOLEAN Connected;
 
-    if (Interrupt->Number != 0 || KeGetCurrentProcessorNumber() != 0 ||
-        Interrupt->Vector >= RTL_NUMBER_OF(KiArmInterrupts))
+    if (Interrupt->Number != 0 || Interrupt->Vector >= RTL_NUMBER_OF(KiArmInterrupts))
         return FALSE;
     if (Interrupt->Irql == PASSIVE_LEVEL) return KiDisconnectPassiveInterrupt(Interrupt);
     OldIrql = KfRaiseIrql(HIGH_LEVEL);
+    KeAcquireSpinLockAtDpcLevel(&KiArmInterruptLock);
     Connected = Interrupt->Connected;
     if (Connected)
     {
@@ -151,6 +154,7 @@ KeDisconnectInterrupt(PKINTERRUPT Interrupt)
         Interrupt->Connected = FALSE;
         KeMemoryBarrier();
     }
+    KeReleaseSpinLockFromDpcLevel(&KiArmInterruptLock);
     KfLowerIrql(OldIrql);
     return Connected;
 }

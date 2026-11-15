@@ -31,7 +31,7 @@ def sd_volume(usb, device):
     return None
 
 
-def cycle(build, usb, startup):
+def cycle(build, usb, startup, reset_timeout=90):
     log = build / 'arm-boot.log'
     hold = build / 'n7000-hold.nsh'
     hold.write_text('@echo -off\necho N7000 waiting for early-debug payload\n')
@@ -78,14 +78,11 @@ def cycle(build, usb, startup):
             capture.terminate()
             capture.wait(timeout=5)
     wait_for(lambda: not usb.present(usb.VID, usb.PID), 10)
-    wait_for(lambda: usb.present(usb.VID, usb.PID), 90)
+    wait_for(lambda: usb.present(usb.VID, usb.PID), reset_timeout)
     device = usb.Dbg()
     try:
         print('Reset reason:', device.read(0x10020404, 4).hex(), flush=True)
         magic, head = struct.unpack('<II', device.read(usb.OS_LOG_BASE, 8))
-        volume = None
-        wait_for(ready, 30)
-        usb.push(device, str(hold), r'\startup.nsh', volume)
         if magic != usb.OS_LOG_MAGIC:
             raise RuntimeError(f'OS log header was not preserved: {magic:08x}, head={head}')
         size = usb.OS_LOG_SIZE - 16
@@ -94,7 +91,7 @@ def cycle(build, usb, startup):
         data = bytearray()
         while len(data) < count:
             position = (start + len(data)) % size
-            length = min(usb.MAX_READ, count - len(data), size - position)
+            length = min(1024, usb.MAX_READ, count - len(data), size - position)
             data += device.read(usb.OS_LOG_BASE + 16 + position, length)
         with (build / '.arm-qemu.lock').open('a') as lock:
             fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
@@ -109,6 +106,7 @@ def main():
     parser.add_argument('--build-dir', type=Path, default=ROOT / 'output-Clang-arm-debug')
     parser.add_argument('--usbdbg', type=Path, default=ROOT.parent / 'N7000PXEDebug/usbdbg.py')
     parser.add_argument('--startup', type=Path)
+    parser.add_argument('--reset-timeout', type=float, default=90)
     args = parser.parse_args()
     build = args.build_dir.resolve()
     startup = args.startup or build / 'n7000-startup-original.nsh'
@@ -118,7 +116,7 @@ def main():
     usb = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(usb)
     try:
-        cycle(build, usb, startup)
+        cycle(build, usb, startup, args.reset_timeout)
     except (OSError, RuntimeError, subprocess.TimeoutExpired) as error:
         parser.exit(1, f'{error}\n')
 

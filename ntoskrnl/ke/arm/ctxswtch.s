@@ -69,10 +69,14 @@
     .seh_nop_w
     add sp, sp, #VsVfpD
     .seh_stackalloc VsVfpD
-    vpop {d0-d15}
-    .seh_save_fregs {d0-d15}
-    vpop {d16-d31}
-    .seh_save_fregs {d16-d31}
+    vpop {d0-d7}
+    .seh_save_fregs {d0-d7}
+    vpop {d8-d15}
+    .seh_save_fregs {d8-d15}
+    vpop {d16-d23}
+    .seh_save_fregs {d16-d23}
+    vpop {d24-d31}
+    .seh_save_fregs {d24-d31}
     cpsie i
     .seh_nop
     bx lr
@@ -89,8 +93,10 @@ KiThreadStartup:
     ldr r3, [sp, #VsFpscr]
     vmsr fpscr, r3
     add sp, sp, #VsVfpD
-    vpop {d0-d15}
-    vpop {d16-d31}
+    vpop {d0-d7}
+    vpop {d8-d15}
+    vpop {d16-d23}
+    vpop {d24-d31}
     cpsie i
     .seh_proc KiThreadStartupContext
 KiThreadStartupContext:

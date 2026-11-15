@@ -33,7 +33,12 @@ VOID FASTCALL KfReleaseSpinLock(PKSPIN_LOCK Lock, KIRQL Irql)
     KfLowerIrql(Irql);
 }
 
-KIRQL FASTCALL HalpAcquireSpinLockRaiseToSynch(PKSPIN_LOCK Lock) { return KfAcquireSpinLock(Lock); }
+KIRQL FASTCALL HalpAcquireSpinLockRaiseToSynch(PKSPIN_LOCK Lock)
+{
+    KIRQL Irql = KfRaiseIrql(SYNCH_LEVEL);
+    HalpAcquire(Lock);
+    return Irql;
+}
 
 VOID FASTCALL HalpAcquireInStackQueuedSpinLock(PKSPIN_LOCK Lock, PKLOCK_QUEUE_HANDLE Handle)
 {
@@ -45,7 +50,10 @@ VOID FASTCALL HalpAcquireInStackQueuedSpinLock(PKSPIN_LOCK Lock, PKLOCK_QUEUE_HA
 
 VOID FASTCALL KeAcquireInStackQueuedSpinLockRaiseToSynch(PKSPIN_LOCK Lock, PKLOCK_QUEUE_HANDLE Handle)
 {
-    HalpAcquireInStackQueuedSpinLock(Lock, Handle);
+    Handle->OldIrql = KfRaiseIrql(SYNCH_LEVEL);
+    Handle->LockQueue.Next = NULL;
+    Handle->LockQueue.Lock = Lock;
+    HalpAcquire(Lock);
 }
 
 VOID FASTCALL HalpReleaseInStackQueuedSpinLock(PKLOCK_QUEUE_HANDLE Handle)

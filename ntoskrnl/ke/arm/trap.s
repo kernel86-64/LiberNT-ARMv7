@@ -445,8 +445,10 @@ KiArmReservedExceptionContext:
     ldr r1, [r0, #VsFpscr]
     vmsr fpscr, r1
     add r0, r0, #VsVfpD
-    vldmia r0!, {d0-d15}
-    vldmia r0, {d16-d31}
+    vldmia r0!, {d0-d7}
+    vldmia r0!, {d8-d15}
+    vldmia r0!, {d16-d23}
+    vldmia r0, {d24-d31}
 .Lrestore_integer:
     mov sp, r6
     pop.w {r0-r12, lr}

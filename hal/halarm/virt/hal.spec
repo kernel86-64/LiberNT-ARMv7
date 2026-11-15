@@ -20,6 +20,8 @@
 @ stdcall HalGetInterruptVector(long long long long ptr ptr)
 @ stdcall HalInitSystem(long ptr)
 @ stdcall HalInitializeProcessor(long ptr)
+@ stdcall HalRequestIpi(long)
+@ stdcall HalStartNextProcessor(ptr ptr)
 @ stdcall HalProcessorIdle()
 @ stdcall HalQueryRealTimeClock(ptr)
 @ stdcall HalReportResourceUsage()

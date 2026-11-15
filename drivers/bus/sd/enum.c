@@ -136,9 +136,7 @@ SdBusSendCommand(
     }
 
     /* Prepare for interrupt-driven completion */
-    InterlockedExchange(&FdoExtension->CommandInterruptStatus, 0);
-    KeClearEvent(&FdoExtension->CommandEvent);
-    SdBusWriteReg32(FdoExtension, SDHCI_INT_STATUS, SDHCI_INT_ALL_MASK);
+    SdBusResetCommandInterrupts(FdoExtension);
 
     /* Write argument */
     SdBusWriteReg32(FdoExtension, SDHCI_ARGUMENT, Argument);
@@ -614,9 +612,7 @@ SdBusSendDataReadCommand(
     }
 
     /* Prepare for interrupt-driven completion */
-    InterlockedExchange(&FdoExtension->CommandInterruptStatus, 0);
-    KeClearEvent(&FdoExtension->CommandEvent);
-    SdBusWriteReg32(FdoExtension, SDHCI_INT_STATUS, SDHCI_INT_ALL_MASK);
+    SdBusResetCommandInterrupts(FdoExtension);
 
     /* Set block size and count */
     SdBusWriteReg32(FdoExtension, SDHCI_BLOCK_SIZE,

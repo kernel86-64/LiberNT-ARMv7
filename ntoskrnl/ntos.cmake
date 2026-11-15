@@ -382,9 +382,11 @@ elseif(ARCH STREQUAL "amd64")
         ${REACTOS_SOURCE_DIR}/ntoskrnl/ke/amd64/usercall.c
         ${REACTOS_SOURCE_DIR}/ntoskrnl/ke/amd64/xstate.c)
 elseif(ARCH STREQUAL "arm")
+    list(REMOVE_ITEM SOURCE ${REACTOS_SOURCE_DIR}/ntoskrnl/ke/ipi.c)
     list(APPEND ASM_SOURCE
         ${REACTOS_SOURCE_DIR}/ntoskrnl/ex/arm/ioport.s
         ${REACTOS_SOURCE_DIR}/ntoskrnl/ke/arm/boot.s
+        ${REACTOS_SOURCE_DIR}/ntoskrnl/ke/arm/apboot.S
         ${REACTOS_SOURCE_DIR}/ntoskrnl/nvs/arch/arm/bootpte.S
         ${REACTOS_SOURCE_DIR}/ntoskrnl/ke/arm/ctxswtch.s
         ${REACTOS_SOURCE_DIR}/ntoskrnl/ke/arm/kstack.s
@@ -401,6 +403,8 @@ elseif(ARCH STREQUAL "arm")
         ${REACTOS_SOURCE_DIR}/ntoskrnl/ke/arm/apc.c
         ${REACTOS_SOURCE_DIR}/ntoskrnl/ke/arm/interrupt.c
         ${REACTOS_SOURCE_DIR}/ntoskrnl/ke/arm/kiinit.c
+        ${REACTOS_SOURCE_DIR}/ntoskrnl/ke/arm/ipi.c
+        ${REACTOS_SOURCE_DIR}/ntoskrnl/ke/arm/mproc.c
         ${REACTOS_SOURCE_DIR}/ntoskrnl/ke/arm/process.c
         ${REACTOS_SOURCE_DIR}/ntoskrnl/ke/arm/irq.c
         ${REACTOS_SOURCE_DIR}/ntoskrnl/ke/arm/debugsvc.c

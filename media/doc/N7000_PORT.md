@@ -964,3 +964,519 @@ fallback for firmware without SMBIOS.
 `ARM N7000 processor name tests: PASS`; the same run installed a 227-byte
 SMBIOS 3.8 table. QEMU `virt` continues to pass its storage fixture with the
 firmware-provided `virt-11.1` name.
+
+### SMP parking and ARM32 processor startup
+
+`Exynos441xPkg/Drivers/MpParkDxe` brings the second Cortex-A9 out of reset,
+parks it through the ACPI parking protocol, and installs a runtime MADT with
+the per-core GIC bases. The driver uses `PMU INFORM5` on Exynos4210 revision
+1.1 and the SYSRAM boot vector on earlier revisions.
+
+LiberNT ARM32 builds its kernel as SMP. `KeStartAllProcessors` learns the AP
+mailbox from MADT, wakes it through an identity-mapped trampoline, and gives
+the AP its own PCR, GIC CPU interface and kernel stacks. SGI 0, 1 and 2 carry
+DPC, APC and IPI work. FreeLoader now maps the second Exynos GIC interface and
+the SCU, and uses shareable normal-memory attributes for the SMP kernel.
+
+The SMDKC210 harness has an explicit `--smp` mode. It starts CPU1 in a
+stackless reset shim that waits for the firmware's Exynos4210 revision 1.1
+PMU INFORM5 boot vector. MpParkDxe then parks it normally; the firmware
+publishes two GICC entries and LiberNT starts the AP through its mailbox.
+Without `--smp`, the original single-processor test remains available.
+
+The 2026-11-13 two-processor session test reached `CPU1 online`, passed all
+17 SD create/write/flush/reopen/read cycles, created the paging file and
+reached `SMSS: Boot environment initialized` in 10.28 seconds. This is a
+QEMU result. The same binaries have now been installed on the phone.
+Hardware validation is described below; QEMU results do not establish
+physical SD or display behavior.
+
+After fixing the dispatch race and the unclaimed-interrupt bugcheck, the
+two-processor `--stage login --smp` run passed in 24.78 seconds. It verified
+the user's profile, Explorer desktop and taskbar, then checked that an
+Explorer window remained responsive. The result file records `processors: 2`.
+
+SMP bring-up exposed several independent defects: the HAL was compiled
+without `CONFIG_SMP`, AP initialization repeated global HAL cache and timer
+initialization, IPI mask iteration skipped every second destination, and
+the dispatcher consumed `NextThread` without rechecking it after acquiring
+the PRCB lock. The last race could publish a null current thread and recurse
+through the data-abort handler. The ARM dispatcher now also consumes a stale
+self-selection without switching stacks. An ISR declining an interrupt no
+longer causes an unconditional kernel bugcheck.
+
+Exynos4210 needs the `0x8000` processor stride for both the GIC CPU interface
+and the private distributor registers. FreeLoader maps CPU1's distributor
+window, and the HAL uses it for SGI initialization, generation and clearing.
+The stride comes from Samsung's published Linux device-tree description and
+the Linux GIC driver's non-banked register handling; no Linux code was copied.
+QEMU's Exynos GIC aliases both distributor windows onto its normal banked
+model, so a QEMU boot alone does not validate the physical window selection.
+The binary regression checks record the actual HAL MMIO addresses instead.
+
+Evidence for the processor mechanics and interrupt contracts:
+
+- [Cortex-A9 TRM, ARM DDI 0388C, section 4.2.1](https://documentation-service.arm.com/static/5e8e2743fd977155116a5ea9): cache ways occupy bits 31:30. The AP trampoline must use `CLZ(ways - 1)` as the way shift, without subtracting it from 32.
+- [GIC architecture specification, ARM IHI 0048B, section 4.3.16](https://documentation-service.arm.com/static/5f8ff21df86e16515cdbfafe): `CPENDSGIR` uses one byte per SGI and exists only in GICv2. GICv1 acknowledges SGIs through IAR and must not write these reserved locations.
+- [Samsung Exynos4210 device tree](https://code.googlesource.com/linux/torvalds/linux/+/3c8f504b3a486e4e984ac8dc619eba3afa24cec4/arch/arm/boot/dts/exynos4210.dtsi) and [Linux GIC initialization](https://kernel.googlesource.com/pub/scm/linux/kernel/git/torvalds/linux/+/refs/heads/master/drivers/irqchip/irq-gic.c): the processor offset applies to both register windows.
+- [Microsoft ISR contract](https://learn.microsoft.com/en-us/windows-hardware/drivers/kernel/writing-an-isr): an ISR returns `FALSE` when the interrupt is not from its device.
+
+`scripts/test-arm-ap-cache.py` executes the built AP invalidation loop for
+five cache geometries and checks every set/way selector. `scripts/test-arm-gic.py`
+executes the built HAL and kernel to check per-processor SGI addresses,
+GICv1/v2 clearing, eight IPI destination masks, contended spinlocks, AP
+initialization, an unclaimed IRQ and withdrawal/self-selection of NextThread
+while acquiring the PRCB lock. These tests require Python Unicorn and
+`llvm-nm`. PCR/PRCB/thread locations use the build's generated assembler
+offsets; the emulator's current-IRQL byte follows the compiled ARM consumer
+at PCR+0x1c. They test LiberNT processor mechanics, not Windows ABI parity.
+
+The physical Cortex-A9 also requires ACTLR.FW (bit 0) alongside ACTLR.SMP
+(bit 6) to broadcast cache and TLB maintenance. The Exynos HAL enables both,
+and the AP trampoline inherits the BSP ACTLR rather than preserving the
+firmware's per-core value. The source is the
+[Arm Cortex-A9 maintenance-broadcasting specification](https://support.arm.com/documentation/ddi0407/h/Introduction/MPCore-considerations/Maintenance-operations-broadcasting).
+The binary regressions check both the Exynos HAL setting and AP inheritance.
+
+On the N7000, both processors reported ACTLR `0x41` and SCTLR `0x60c5187d`.
+A boot-driver regression pinned its producer to CPU0 and consumer to CPU1,
+verified 256 bidirectional shared-memory exchanges, and checked that
+`KeIpiGenericCall` executed on both processors (mask `3`). These tests,
+processor naming, ACPI caching, the clock and RTC passed on hardware.
+Physical SD create/write testing subsequently passed, as recorded below.
+Earlier timer-IRQ samples resolved to the SD PIO loop and
+`FatExamineFatEntries`; those samples alone did not prove a deadlock. The diagnostic harness arms
+its watchdog before FreeLoader; the boot test now refreshes that existing
+watchdog for at most 20 seconds, only while its control and reload registers
+match the harness configuration. It never enables a watchdog itself.
+
+A diagnostic hardware run with a temporary high-priority CPU1 monitor passed
+all 17 SD overwrite cycles at 5.71 seconds, initialized the SMSS boot
+environment at 8.42 seconds and reported `WINLOGON: Session initialized`
+at 21.08 seconds. This does not validate normal SMP scheduling or an
+interactive desktop; the monitor was removed before the next hardware run.
+
+The non-banked GIC exposes a migration race in `HalpSetIrql`: capturing the
+processor number before disabling interrupts can select the old processor's
+MMIO window if the thread migrates in between. The HAL now reads the
+processor number after `CPSID I`. The binary regression injects migration
+at that instruction and checks the PMR write in both directions; it fails
+with the old ordering and passes with the corrected one.
+
+The GIC acknowledgement token must survive nested IRQs. The HAL previously
+kept one token per processor, so an inner acknowledge overwrote the outer
+token and the outer EOI repeated the inner token. It now keeps a bounded
+per-processor stack, preserves the complete IAR value including the SGI
+source CPU, ignores spurious acknowledgements, and protects EOI stack
+updates against IRQ entry. The source is
+[Arm GIC architecture, IHI 0048B, sections 3.2 and 4.4.5](https://documentation-service.arm.com/static/5f8ff21df86e16515cdbfafe).
+The binary test fails with the old ordering and checks nested tokens,
+a spurious acknowledge between them, and preservation of the caller IRQ mask.
+
+After a cold return to UEFI, the physical two-processor boot passed all
+17 SD cycles at 6.12 seconds, initialized SMSS at 7.67 seconds and Winlogon
+at 16.01 seconds. The maintainer saw the desktop on the phone. Both cores
+continued taking interrupts until the diagnostic watchdog reset at about
+42 seconds; RESET_STAT was `0x00100000`, confirming that scheduled reset.
+That run still contained temporary tracing, which has since been removed.
+Earlier intermittent stops are not yet established as resolved by the two
+HAL corrections; ordinary boots without tracing require further observation.
+A normal startup does not arm the diagnostic watchdog.
+
+The maintainer then reproduced early boot-animation stalls in four ordinary
+boots without tracing. These remain the active hardware defect. A later
+RAM probe found both processors past exception return and back in idle,
+with the last clock observations at interrupt time 5.72 seconds. Moving
+IRQ unmasking after WFI did not fix the defect and was reverted. The current
+investigation records the GIC running priority and the MCT comparator
+state; the temporary probes are not a fix.
+
+Subsequent watchdog runs still stopped during startup, with the last clock
+observations between approximately 2.3 and 9.7 seconds. The physical MIDR
+was `0x412fc091` (Cortex-A9 r2p1). Idle-call sequence counters distinguished
+a new idle invocation from an earlier completed WFI: CPU0 entered the next
+HAL idle call, then left its read probe at the instruction preceding a
+GICC_CTLR load from `0xfff20000`. The final probe placed its markers and
+load in one assembly block, without intervening stack accesses. The saved
+page tables mapped that address to `0x10480000`, with descriptor
+`0x10480417`. This identifies the last observed progress, not a confirmed
+cause or correction of the hardware stall.
+
+Some watchdog restarts also leave the microSD absent from UEFI: firmware
+reports command CRC errors before publishing its BlockIo. A battery power
+cycle restores enumeration. The hardware harness now recovers its RAM log
+without requiring the microSD to reappear, using reads of at most 1024
+bytes. A mocked recovery run verified log preservation with no SD volume.
+A separate `SdRecoveryApp` in the companion Exynos441xPkg passed host tests
+and a physical run: LDO17 changed from `E8` to `28`, and UEFI enumerated the
+card after its warm restart. The firmware SD initialization now isolates
+the pins and power-cycles LDO17 before identification. Its regression fails
+on the old implementation and passes on the new one, including I2C errors.
+With the maintainer's approval, the native N7000 image with SHA-256
+`0097064ec0e114221103ecdbed704da1ca112fa411b514696732098f4781e5fe`
+was flashed to KERNEL. Subsequent OS watchdog restarts retained the SD
+volume without battery removal. An attempted internal-FAT upload stalled
+the USB command channel; that separate failure remains unexplained.
+
+The physical Diagnostic Control Register initially read `0x00010000`.
+Per-processor HAL initialization now applies Cortex-A9 controls from
+[Arm UAN 0007D](https://documentation-service.arm.com/static/608117c55e70d934bc69f136):
+bits 4 and 11 for the affected revisions (742230 and 751472), and bit 22
+for 845369. It preserves other bits and checks readback before enabling
+the CPU interrupt interface. Binary regressions cover 13 MIDRs, existing
+controls and denied writes. Both physical processors reported `00410810`.
+These corrections do not establish that the original stall is fixed.
+
+One traced run continued taking timer interrupts on both CPUs until its
+scheduled reset at about 42 seconds, but LSASS encountered recursive
+vectored-handler-lock errors and an access violation. NTDLL on the card
+matched the local build by SHA-256. After removing IRQ/idle/exception-return
+probes, early SD-test stalls recurred. A sparse watchdog-worker probe last
+advanced at interrupt time 2.6 seconds. First-chance ARM user-exception
+logging is temporary; the hardware startup defect remains active. The same
+kernel reached an interactive desktop in QEMU SMP after the bounded initial
+startup phase timed out and was inspected and continued; separate login,
+Start-menu and Explorer checks passed.
+
+The ARM C headers still defined `SYNCH_LEVEL` as 2 in an SMP build, while
+the existing ARM assembler-generation contract in `ksx.template.h` defines
+it as `IPI_LEVEL - 2` (12). The HAL raise-to-synch function and both
+spinlock acquisition wrappers also used the dispatch-level implementation.
+The ARM NDK definition now follows the existing SMP assembler contract,
+the duplicate internal definition is removed, and all three HAL entry
+points raise to that level. The binary regression fails on the former
+HAL and checks the actual IRQL, GIC PMR and restoration after release on
+both Exynos CPU windows and the shared virt window. QEMU SMP reached SMSS
+in 14.24 seconds. The initial login phase exceeded its 30-second limit;
+bounded follow-up runs reached the verified Explorer desktop and passed
+Start-menu and Explorer responsiveness checks. The physical run with
+kernel SHA-256 prefix `1b820575ba9ae24c` and HAL prefix `ef70f0825a2c7ad1`
+still stopped in the first storage pass, after the 2.03-second clock and
+RTC checks. The watchdog worker last advanced at about 2.61 seconds on
+CPU0, and reset status confirmed the watchdog reset. Thus the SYNCH_LEVEL
+correction does not fix this startup stall. This is consistency with
+an existing ARM consumer, not evidence of Windows 11 ARM32 ABI parity.
+
+A subsequent boot with storage-stage RAM markers stopped inside the first
+`ZwCreateFile`, before any `ZwWriteFile`: stage 1, status `STATUS_PENDING`,
+CPU1, IRQL 0, interrupt time about 2.03 seconds. Post-reset kernel static
+data and the bootstrap root were readable, but the AP PCR mapping was not
+recoverable from the saved table contents. That prevents a reliable stack
+reconstruction from those contents alone; it is not proof of a live mapping
+fault. Temporary IRQ snapshots capture exception registers and bounded
+kernel-stack samples directly in the uncached diagnostic region.
+
+IRQ snapshots showed thousands of vector-107 interrupts on CPU0, with both
+CPUs completing their last C interrupt handlers near three seconds. This
+does not establish that SD interrupt handling caused the stop. A subsequent
+register probe read FPSID `41033092` on both CPUs (FPU revision 2).
+Arm UAN 0007D, erratum 754320, identifies speculative VFP multiple loads
+longer than eight 64-bit beats as a deadlock risk on these revisions; its
+hardware ECO is identified by FPU revision 4. ARM exception return, context
+switch and thread startup used 16-register loads. These restores are split
+into eight-register loads, retaining the frame layout and register values.
+The binary regression fails on the old load length and executes all three
+restore paths to check all 32 D registers and source-pointer updates.
+QEMU SMP reached SMSS in 10.38 seconds. The first physical run with kernel
+SHA-256 prefix `3090b78c8517c163` passed all 17 storage cycles and reached
+the SMSS boot environment at 8.01 seconds, but both CPUs stopped recording
+interrupts around 8.47 seconds. This progress does not establish that the
+startup hang is fixed. Temporary exception-exit markers distinguish the
+C-handler return from completion of VFP restoration.
+
+The next traced run still stopped in the first storage pass, near 5.52
+seconds. Both CPUs reached the marker following the VFP loads; the last
+CPU1 sample was in `READ_REGISTER_ULONG` called by the SDHCI PIO FIFO read
+at `request.c:1574`. CPU0 repeatedly returned FALSE for vector 107. These
+are last observations, not a stopped-CPU backtrace.
+
+The SDHCI wait previously treated a latched buffer-ready interrupt as
+permission to access the FIFO. A binary regression injects an old ISR
+notification during command setup and catches a FIFO access with the
+current buffer-enable bit clear. The wait now uses Present State bits 11
+and 10 for PIO read/write readiness, while checking accumulated and live
+error status. The register behavior comes from SD Association Part A2
+v2.00, sections 1.7.1 and 2.2.9
+([published specification](https://ercankoclar.com/wp-content/uploads/2017/11/Simplified_SD_Host_Controller_Spec.pdf)).
+Read/write regressions cover stale and coalesced notifications, timeout
+and errors. QEMU SMP reached SMSS in 10.58 seconds; physical validation of
+the SDHCI change did not remove the SMP stall: the next run stopped near
+2.46 seconds in the first storage pass.
+
+A controlled `NUMPROC=1` run used the same kernel, HAL and SDHCI binaries
+as that failed SMP run. CPU1 never came online; CPU0 continued taking clock
+interrupts through 42.54 seconds, and the watchdog worker completed all
+20 refreshes. All 17 storage cycles passed. Wininit nevertheless entered
+recursive NTDLL exceptions around 11.21 seconds and terminated around
+12.07 seconds. Thus the early total stall depends on running the second
+core in these runs, while the user-mode startup defect also occurs with
+only one active core. The normal two-core configuration was restored after
+collecting the one-core log.
+
+The next cache candidate targets short-descriptor publication under SMP.
+HAL sets SCU Diagnostic Control bit 0 for Cortex-A9; the register is RAZ,
+so this setting cannot be verified by readback. Normal and boot PTE
+updates issue DSB/clean twice on Cortex-A9 to account for cache-line false
+sharing, per UAN 0007D erratum 764369. Other CPUs retain one clean. The
+binary regression catches the old missing pre-clean barrier and checks
+both update paths on four MIDRs. This only addresses these PTE publication
+paths; other MVA cache-maintenance paths still require review. QEMU SMP
+reached SMSS in 10.58 seconds, but the physical run with kernel prefix
+`af64195716c33795` and HAL prefix `024060da7c7b0ea3` again stopped in the
+first storage pass after the 2.05-second checks. The candidate was reverted
+because it did not correct the stall; full coverage of 764369 remains a
+documented gap. NVS I/O mappings already request `MI_LEAF_DEVICE` for
+`MiCacheNone`, so the source does not support assuming that SD MMIO is
+mapped as ordinary noncached RAM. Low physical page tables can be overwritten
+by firmware startup; their post-reset contents alone cannot prove live
+mapping attributes.
+
+A temporary watchdog worker now waits on QPC/MCT instead of a kernel
+delay and samples the MCT comparator state. This changes the workload and
+is not a correction. With kernel prefix `9bbd53f58846234c`, HAL prefix
+`4c2f59ebedffef23` and test-driver prefix `1e26f6a593662e3d`, the SMP boot
+passed storage and initialized CSRSS. It then failed creating wininit:
+`MmCreateTeb` faulted in `memset` at VA `7ffc0000`, FSR `00000808`, and
+`PspCreateThread` returned `c0000005`, leading to STOP `c000021a`.
+The worker's last sample covered 11.00 seconds of MCT time and 10.01
+seconds of kernel interrupt time; the comparator remained enabled with a
+1-ms period and a future deadline. This run does not prove that a stopped
+system clock caused earlier stalls. It provides a concrete abort to trace.
+NTDLL on the phone still hashes to `f915b78e7822b76f2b545534b0ef90fed2b99c27d03f37ec816aaf740eb34280`;
+local rebuilds have since changed the DLL and its symbols, so current
+local symbols must not be used to assign source lines to that older DLL.
+
+CP14 discovery on the phone returned DBGDIDR `35137021`, DBGDRAR
+`1088F003`, DBGDSAR `00030003` and DBGDSCR `03000002`. An attempted CPU
+memory read at the indicated debug address did not complete and stalled
+the UEFI USB command channel. The firmware memory map covers this address
+with its identity-mapped Device region from zero through `0x3fffffff`.
+Availability of that external debug block
+in the CPU physical address space, including its clocks and power, remains
+`INFO_NEEDED`; do not repeat the access without that evidence.
+
+A subsequent SMP run reported FSR `00000406`, whose short-descriptor status
+is `0x16` (asynchronous external abort). Its saved PC and DFAR do not identify
+the originating bus access. TTBR0 and the current process root both read
+`47410000`; an ATS1CPR query of the saved DFAR returned PAR `0000000b`.
+
+AP initialization also replaced the idle process's active-processor mask.
+The binary regression starts with CPU0's bit set and catches the old result
+`2`; an atomic OR preserves both bits and produces `3`. QEMU SMP reached
+SMSS in 10.58 seconds. Physical kernel prefix `cfbcde51657a6ae1` passed all
+17 storage cycles and initialized Winlogon with the busy watchdog worker,
+then stopped around 22.61 seconds. Restoring the worker's one-second kernel
+delay, with the same kernel and HAL, restored the early stall around 2.21
+seconds in the first storage pass. The mask fix therefore does not resolve
+the physical SMP hang; the busy worker only changes its manifestation.
+
+The physical cross-core instruction test exposed a separate cache defect:
+CPU0 alternates two assembled Thumb functions in executable pool, flushes
+the range, and publishes it; CPU1 executes ISB before calling the function.
+With local ICIALLU, round 2 returned the previous value `35` instead of
+`6a`. KeInvalidateRangeAllCaches now issues ICIALLUIS; physical kernel
+prefix `e19ce956774769cb` passed all 256 updates with test-driver prefix
+`1b2be5d54fbd1af3`. This matches the API's
+[all-processor cache contract](https://learn.microsoft.com/en-us/windows-hardware/drivers/ddi/ntddk/nf-ntddk-keinvalidaterangeallcaches)
+and the Arm inner-shareable instruction-cache operation. The receiving
+processor's ISB follows Arm's
+[Barrier Litmus Tests and Cookbook, section 9.2.2](https://documentation-service.arm.com/static/5ece8d6a56a54774bd17a1f4).
+The ordinary-delay watchdog run still stopped in the first storage pass;
+this cache correction does not establish a fix for that hang.
+QEMU SMP reached SMSS in 10.38 seconds with the correction; its cache model
+does not replace the physical cross-core regression.
+
+Independent MCT timestamps in the IRQ snapshots also stopped advancing near
+the last interrupt-time samples. The last observed post-EOI state had GIC
+running priority `ff`, token-stack depth zero, MCT control `103`, interrupt
+enable `1`, and a future comparator deadline. These observations do not
+identify the instruction at which either core eventually stopped. The
+final exception-return PC/CPSR matched the entry values and had IRQ enabled.
+Replacing WFI with NOP still stopped in the first storage pass (around
+3.31 seconds); restoring WFI and unmasking asynchronous aborts in idle
+also failed to reveal an earlier abort. Both experiments were reverted.
+PL310 control read zero in UEFI, and SCU control read `1`.
+
+A separate 742231 candidate enabled Diagnostic Control bit 12 on r2p0-r2p2.
+The binary revision/readback regression failed before the change and passed
+after it; both physical cores reported `00411810`. The first storage pass
+still stopped. The candidate and its changed test expectations were reverted;
+the next run confirmed the previous `00410810` controls again.
+
+The board test temporarily redirects SD SPI 107 from CPU0 to CPU1 before
+its storage test. With both cores active and the ordinary sleeping watchdog
+worker, three successive runs passed all 17 storage cycles (5.85, 5.96 and
+6.12 seconds). This is a diagnostic routing change, not a production fix.
+Later failures varied: STOP `9` with a queued-lock address and IRQL `1`;
+wininit failure during kernelbase locale initialization; and CSRSS prefetch
+external abort `FSR=8`, IFAR `10030124`, at the first instruction of
+RtlSetUnhandledExceptionFilter. Current local `.text` and `.symz` sections
+match the phone's kernelbase and ntdll despite different full-image hashes.
+The phone's locale.nls is byte-identical to `media/nls/locale.nls`
+(794914 bytes, SHA-256
+`868e5d3a3f115c2649706f566f9741aa3e2c6927c10b3f07d5e4c76b0e403115`).
+The user abort trace now records raw hardware translation state to distinguish
+a bad user pointer from a bus error or incorrect mapping. An ARM control-state
+probe also preserves up to 8 KB of the current kernel stack in the reserved
+log RAM before a crash, avoiding the overwritten page-table problem after reset.
+
+One later routed-IRQ run initialized Winlogon and continued through 39 seconds,
+then crashed returning to PC zero from a user callback. Its preserved stack
+exposed a defect in the temporary exception-exit probe: calling
+KiArmMarkExceptionExit after constructing the return frame lets a callee's
+stack overlap the frame below the callback's current SP. The probe call and
+helper were removed completely. `test-arm-exception-exit.py` executes the built
+return path with the callback stack placement and ABI-permitted callee stack
+use. Restoring the old call placement reproduces corrupted r0; the corrected
+path preserves all integer registers and the PC/CPSR pair. This invalidates
+attributing that callback crash to the operating-system path itself; it does
+not establish the cause of the earlier pre-user-mode storage stall.
+
+A 743622 candidate then enabled Diagnostic Control bit 6 on the affected r2
+cores. The binary regression passed and both cores reported `00410850`, but
+the first storage pass still stalled. The candidate and expectations were
+reverted; the hardware returned to `00410810`.
+
+With the exception-exit probe removed and SD SPI 107 routed normally to CPU0,
+the early storage stall remained. Four isolated tests now run before the SD
+driver starts: 1024 cross-core event exchanges, 1024 synthetic SPI 107/ISR/DPC
+exchanges, the same IRQ exchanges with an MDL alias mapped and unmapped every
+round, and the same exchanges with concurrent reads of SD controller registers.
+The MMIO test also writes zero to the W1C interrupt-status register; it issues
+no card commands and does not access the FIFO. All four passed physically;
+the MMIO test completed at 2.08 seconds, while the subsequent first file cycle
+stalled with the last IRQ samples near 2.84 seconds. These bounded tests do
+not establish that every scheduler or mapping path is correct.
+
+Serializing each PIO FIFO block with the existing interrupt spin lock did not
+fix the stall: the first file cycle remained incomplete, and the final IRQ
+samples were near 5.74 seconds. The candidate was removed. The binary PIO
+regression now exercises both polled and interrupt-connected execution for
+read/write, stale/coalesced readiness, timeout and controller-error cases.
+QEMU SMP reached SMSS with the candidate in 11.79 seconds; this does not
+establish physical correctness.
+
+An idle-path diagnostic replaced WFI with continued polling and recorded
+per-core idle-call counts, MCT time, GIC PMR/RPR/HPPIR and comparator state.
+It still stalled in the first file cycle: both idle records stopped near the
+final IRQ time of 4.17 seconds. CPU0 had more than 170000 idle calls and CPU1
+more than 220000; both last records had RPR `ff`, MCT control `103`, interrupt
+enable `1`, status `0` and a future deadline. No core continued updating its
+idle heartbeat after interrupt time stopped. This does not locate a stopped
+instruction or prove a hardware deadlock. The polling/idle diagnostic was
+removed before the next SD interrupt-signal experiment.
+
+Disabling only SDHCI interrupt signaling (register 0x38) for the file test,
+with both processors and the clock active, passed all 17 cycles at 6.17
+seconds. Restoring the previous `07ff00fb` signal mask was followed by a stall
+near 6.88 seconds during subsequent boot I/O. Keeping SD signaling disabled
+for the rest of the next boot passed storage at 6.11 seconds, initialized
+CSRSS and Winlogon, and continued shell activity through 41.22 seconds.
+Both CPUs still recorded interrupts at 42.14 seconds. RESET_STAT was
+`00100000`, the diagnostic watchdog reset, rather than a recorded bugcheck.
+The maintainer observed startup followed by that reset. This experiment
+does not establish correct interrupt-driven SD operation.
+
+A separate command-reset race was reproduced in the built SD driver: an ISR
+between software-status reset and hardware-status clear can leave the old
+command's completion in CommandInterruptStatus. The model catches a response
+read before the new command completes. Clearing hardware and accumulated
+status together under the interrupt spin lock, after clearing CommandEvent,
+passes that interleaving. The same race was then reproduced for both enum.c
+command helpers; all three now use the synchronized reset helper. The
+regression covers 20 binary execution cases. The first physical test with
+only the main request path corrected still stalled near 2.47 seconds, so
+that race correction alone does not explain the SMP boot stall.
+
+With the synchronized reset applied to all three command paths, a physical
+boot with the normal SD signal mask still stalled in the first file cycle.
+The reset-race regression was strengthened to delay the ISR's accumulation
+until the worker tries to acquire the ISR lock, or until the new command is
+issued if no synchronization occurs. Temporarily restoring the original
+reset sequences again fails with premature response access; restoring the
+synchronized helper passes all 20 cases. This is a separately reproduced
+driver race, not a demonstrated correction of the physical system stall.
+
+With only FIFO-ready signaling disabled (`07ff00cb`), storage passed at 6.10
+seconds, but creating the first user thread failed with a synchronous external
+abort: VA `7ffc0000`, FSR `808`, TTBR `47500000`, PAR `e00d9090`. The physical
+address encoded by PAR is outside the board RAM. A later run with the same
+signal mask stalled near 19.35 seconds without an abort. Disabling only these
+signals therefore changes the failure; it does not establish a fix.
+
+A deterministic pre-storage page-walk visibility test now prepares a scratch
+root with the current TTBR attributes. Its child table contains a valid poison
+mapping cleaned to RAM, followed by zeros written through the cached alias.
+It queries ATS1CPR without accessing the translated address, then restores the
+original root. Physical CPU0 read cached PTE `00000000`, yet PAR was `e00000d4`
+with TTBR `44460000`: the hardware walker saw the previous RAM contents.
+QEMU returned a translation fault (`PAR=f`) for the same test, so its cache
+model does not reproduce this defect.
+
+Short-descriptor table walks now use Inner Shareable
+Normal Write-Back Write-Allocate attributes in both boot-root installation and
+process switches. AP startup inherits the boot TTBR. The field encodings come
+from [Arm's TTBR register description](https://arm-software.github.io/CMSIS_6/latest/Core_A/group__CMSIS__TTBR.html),
+and [Cortex-A9 TRM, section 6.3](https://documentation-service.arm.com/static/5f0370fccafe527e86f5bfb2)
+explains that noncacheable walks access external memory, while write-back
+walks look up the L1 data cache. A native ASan/UBSan model of local and remote
+cached table writes fails with the previous root-only value and passes with
+the matching attributes. Both physical cores passed with TTBR `4446004a`
+and PAR `f`; Cortex-A9 reads TTBR.NOS as zero. With normal SD signaling the
+same boot still stalled in its first storage pass near 2.64 seconds. The
+page-walk correction fixes a separately reproduced cache-visibility defect,
+but does not resolve the original SD IRQ stall.
+
+The polled milestone filters every `SDHCI_INT_SIGNAL_ENABLE` write through
+the hardware backend. Exynos returns zero, while other backends preserve the
+requested value. Interrupt-status reporting remains enabled for polling.
+The binary SD regression checks this policy for Exynos, a generic backend
+and an absent hardware extension, including writes to status enable.
+Temporary IRQ, exception-return, user-fault and watchdog stack snapshots
+have been removed from the kernel. The permanent page-walk, cross-core
+instruction/data, clock, RTC and storage regressions remain in the board
+test driver. When the host explicitly arms the diagnostic watchdog, its
+worker checks both processors with `KeIpiGenericCall` after 120 seconds,
+then allows the watchdog to reset the phone for log recovery. Normal boot
+does not arm this watchdog.
+
+The cleaned polled build passed the physical test on 2026-11-15: kernel
+SHA-256 prefix `8b9ec306b1a34c65`, HAL `554a1d3d2dc37844`, SD bus
+`0256b9ae47868d82`, board test `a6ce21e8e8d10985`. Both page-walk tests and
+all 256 cross-core instruction updates passed. All 17 file cycles passed at
+5.22 seconds, CSRSS initialized at 9.51 seconds and Winlogon at 14.43 seconds.
+The sustained check passed with CPU mask `3` at 121.75 seconds. No STOP or
+recorded kernel abort occurred; RESET_STAT `00100000` confirms the scheduled
+diagnostic watchdog reset. QEMU SMDKC210 SMP passed the matching session
+fixture in 10.18 seconds. The disabled Exynos signal policy is an explicitly
+requested interim baseline; interrupt-driven operation remains unfinished.
+
+This is a two-processor boot milestone, not a complete SMP API claim. The
+legacy KPRCB packet IPI helpers remain unimplemented on ARM32; no ARM32
+consumer calls them. The architecture implementation uses its own generic
+IPI rendezvous for `KeIpiGenericCall`, software interrupts and freezing.
+
+Pre-commit cppcheck found numeric arguments passed to the type-based
+`ALIGN_UP` macro in AP allocation. These are now `ALIGN_UP_BY` calls, so the
+PCR is aligned to a page and its thread to 16 bytes. The binary regression
+supplies four deliberately unaligned pool addresses: the former build
+fails with PCR `02200004`, and the corrected build passes all four cases.
+
+The subsequent physical run of kernel `0f6ec89bf99c4b87` passed storage and
+the 121.70-second SMP check, but failed to reach Winlogon. `services.exe`
+failed loading `msvcrt.dll` with `c0000005`. The saved kernel stack locates
+the original abort at DCCIMVAC in `KeInvalidateRangeAllCaches`, called by
+`NtFlushInstructionCache`: FSR `807`, VA `011d0fe0`. Thus two-minute timer/IPI
+progress alone does not establish a successful user-session boot.
+
+A cache-line/table-lock experiment passed a modeled withdrawal race, but the
+physical boot with kernel `77690480219350c8` still failed: Winlogon initialized
+at 15.15 seconds, then `DbgkCreateThread` asserted that its saved thread was
+not `PsGetCurrentThread` at 36.53 seconds. The cache-line locking candidate
+was removed before the next attempt.
+
+
+SD interrupt signaling remains disabled in this baseline. The successful
+121.75-second run is recorded above, but subsequent runs demonstrate that
+other SMP failures remain. A PCR/current-thread migration correction is
+being developed separately and is not included in this milestone.

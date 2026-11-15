@@ -341,7 +341,7 @@ def prepare_kernel(build, stage, no_build, manual_login=False):
     UEFI.run('mcopy', '-o', '-i', image, startup, '::/startup.nsh')
 
 
-def firmware_test(build, lock, firmware, no_build, stage, manual_login):
+def firmware_test(build, lock, firmware, no_build, stage, manual_login, smp=False):
     if firmware.with_suffix('.target').read_text().strip() != 'smdkc210':
         raise RuntimeError('the firmware must be built with --smdkc210')
     image = build / 'arm-uefi-tests.img'
@@ -369,6 +369,8 @@ def firmware_test(build, lock, firmware, no_build, stage, manual_login):
         '-device', f'loader,file={firmware},addr=0x40010000,force-raw=on',
         '-device', f'loader,file={build / "arm-smdkc210-boot.elf"},cpu-num=0',
         '-drive', f'if=sd,index=2,format=raw,file={build / "arm-uefi-tests.img"}']
+    if smp:
+        command.extend(['-device', 'loader,addr=0x40008000,cpu-num=1'])
     if stage in ['input', 'login']:
         command.extend(['-device', 'usb-kbd,bus=usb-bus.0,usb_version=2',
                         '-device', 'usb-tablet,bus=usb-bus.0,usb_version=2'])
@@ -396,6 +398,11 @@ def firmware_test(build, lock, firmware, no_build, stage, manual_login):
                     'ARM N7000 ACPI cache tests: PASS', 'ARM N7000 clock tests: PASS',
                     'ARM N7000 RTC tests: PASS',
                     'ARM N7000 storage tests: PASS', 'ARM N7000 overwrite tests: PASS', 'NtProcessStartup('])
+                if smp:
+                    passed = passed and all(marker in text for marker in [
+                        'ARM SMP: CPU1 online', 'ARM N7000 coherency tests: PASS',
+                        'ARM N7000 instruction coherency: PASS',
+                        'ARM N7000 page-walk visibility tests: PASS'])
                 if stage in ['session', 'csr', 'startup', 'input', 'login']:
                     passed = passed and all(marker in text for marker in [
                         'Paging file \\??\\C:\\pagefile.sys created, 16 MB, maximum 32 MB',
@@ -449,6 +456,7 @@ def firmware_test(build, lock, firmware, no_build, stage, manual_login):
                     if data != bytes(index ^ 0xa9 for index in range(256)):
                         raise RuntimeError('the SD write/flush test did not persist the expected bytes')
                     return {'stage': 'smdkc210-' + stage, 'passed': True,
+                            'processors': 2 if smp else 1,
                             'seconds': round(now - started, 2),
                             **({'login_seconds': login_seconds} if login_seconds is not None else {}),
                             **({'desktop_seconds': desktop_seconds, 'autologon': not manual_login} if stage == 'login' else {}),
@@ -549,9 +557,12 @@ def main():
                         help='boot a --smdkc210 EDK II payload using the existing user test image')
     parser.add_argument('--stage', choices=['user', 'session', 'csr', 'startup', 'input', 'login'], default='user')
     parser.add_argument('--manual-login', action='store_true', help='exercise USB credential entry instead of automatic logon')
+    parser.add_argument('--smp', action='store_true', help='start CPU1 through the QEMU reset shim and require it online')
     args = parser.parse_args()
     if args.stage != 'user' and not args.firmware:
         parser.error('--stage requires --firmware')
+    if args.smp and not args.firmware:
+        parser.error('--smp requires --firmware')
     build = args.build_dir.resolve()
     cache = (build / 'CMakeCache.txt').read_text().splitlines()
     if not any(line.startswith('ARCH:') and line.split('=', 1)[-1] == 'arm' for line in cache):
@@ -562,7 +573,7 @@ def main():
         except BlockingIOError:
             parser.error('the ARM test log/debugger is in use by another test')
         try:
-            result = (firmware_test(build, lock, args.firmware.resolve(), args.no_build, args.stage, args.manual_login) if args.firmware else
+            result = (firmware_test(build, lock, args.firmware.resolve(), args.no_build, args.stage, args.manual_login, args.smp) if args.firmware else
                       test(build, lock, args.no_build))
         except (OSError, RuntimeError, subprocess.CalledProcessError) as error:
             (build / 'arm-uefi-results.json').write_text(json.dumps(

@@ -303,7 +303,11 @@ typedef enum
 //
 // Synchronization-level IRQL
 //
+#ifdef CONFIG_SMP
+#define SYNCH_LEVEL             (IPI_LEVEL - 2)
+#else
 #define SYNCH_LEVEL             DISPATCH_LEVEL
+#endif
 
 //
 // Double fault stack size

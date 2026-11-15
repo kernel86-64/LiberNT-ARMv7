@@ -346,7 +346,7 @@ KiQueryProcessorTopology(
                     (Keys[r].ShareShift == Cache->ShareShift) &&
                     (Keys[r].GroupId == GroupId))
                 {
-                    Records[r].ProcessorSet |= KiProcessorBlock[i]->SetMember;
+                    Records[r].ProcessorSet |= KiPrcbAffinity(KiProcessorBlock[i]);
                     Merged = TRUE;
                     break;
                 }
@@ -355,7 +355,7 @@ KiQueryProcessorTopology(
             if (!Merged && (Records_ < MaxRecords))
             {
                 Records[Records_].Descriptor = Cache->Descriptor;
-                Records[Records_].ProcessorSet = KiProcessorBlock[i]->SetMember;
+                Records[Records_].ProcessorSet = KiPrcbAffinity(KiProcessorBlock[i]);
                 Keys[Records_].ShareShift = Cache->ShareShift;
                 Keys[Records_].GroupId = GroupId;
                 Records_++;
@@ -372,7 +372,7 @@ KiQueryProcessorTopology(
             {
                 if (PackageIds[p] == PackageId)
                 {
-                    Sets[p] |= KiProcessorBlock[i]->SetMember;
+                    Sets[p] |= KiPrcbAffinity(KiProcessorBlock[i]);
                     Merged = TRUE;
                     break;
                 }
@@ -381,7 +381,7 @@ KiQueryProcessorTopology(
             if (!Merged && (Sets_ < MaxSets) && (Sets_ < MAXIMUM_PROCESSORS))
             {
                 PackageIds[Sets_] = PackageId;
-                Sets[Sets_] = KiProcessorBlock[i]->SetMember;
+                Sets[Sets_] = KiPrcbAffinity(KiProcessorBlock[i]);
                 Sets_++;
             }
         }

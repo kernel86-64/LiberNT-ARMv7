@@ -15,7 +15,7 @@ MiInitializeKernelVaLayout(const LOADER_PARAMETER_BLOCK *LoaderBlock)
 {
     ULONG Ttbcr;
     PLIST_ENTRY Link;
-    ULONG Root, First = 0, Last = 0;
+    ULONG Root, First = 0, Last = 0, Ttbr, Zero = 0;
 
     __asm__ __volatile__("mrc p15, 0, %0, c2, c0, 2" : "=r" (Ttbcr));
     MiArmShortDescriptors = (Ttbcr & (1UL << 31)) == 0;
@@ -36,6 +36,10 @@ MiInitializeKernelVaLayout(const LOADER_PARAMETER_BLOCK *LoaderBlock)
         }
         if (Ttbcr != 0 || !MiArmShortPrepareBoot(Root, First, Last))
             KeBugCheckEx(MEMORY_MANAGEMENT, 0x53445054, Root, First, Last);
+        Ttbr = MiArmShortTtbr(Root << PAGE_SHIFT);
+        __asm__ __volatile__("dsb sy\n\tmcr p15, 0, %0, c2, c0, 0\n\tisb\n\t"
+                             "mcr p15, 0, %1, c8, c7, 0\n\tdsb sy\n\tisb"
+                             :: "r"(Ttbr), "r"(Zero) : "memory");
         DbgPrintEarly("ARM short-descriptor NVS tables prepared: root=%lx\n", Root);
     }
     MmSystemRangeStart = (PVOID)KSEG0_BASE;

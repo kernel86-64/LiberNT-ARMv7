@@ -6,10 +6,11 @@
  */
 
 #include <ntoskrnl/include/ntoskrnl.h>
+#include <nvs/include/mienv.h>
+#include <nvs/arch/arm/shortpte.h>
 
 VOID NTAPI KiSwapProcess(PKPROCESS NewProcess, PKPROCESS OldProcess)
 {
-    extern BOOLEAN MiArmShortDescriptors;
     ULONG Root, Zero = 0;
     KAFFINITY Member;
 
@@ -25,6 +26,7 @@ VOID NTAPI KiSwapProcess(PKPROCESS NewProcess, PKPROCESS OldProcess)
         if (MiArmShortDescriptors)
         {
             if (Root & 0xffffu) KeBugCheck(INVALID_PROCESS_ATTACH_ATTEMPT);
+            Root = MiArmShortTtbr(Root);
             __asm__ __volatile__("dsb ish\n\tmcr p15, 0, %0, c2, c0, 0\n\t"
                                  "mcr p15, 0, %1, c13, c0, 1\n\tisb\n\t"
                                  "mcr p15, 0, %1, c8, c7, 0\n\tdsb ish\n\tisb"
