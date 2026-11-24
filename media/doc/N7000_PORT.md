@@ -1519,3 +1519,13 @@ at 15.99 seconds. The watchdog reset the phone before the sustained SMP
 check, with no recorded bugcheck. The transfer-completion signal was
 removed. The preceding run used the same kernel and HAL and passed with
 the command-completion signal alone.
+
+With only `SDHCI_INT_XFER_COMPLETE` enabled, diagnostic build
+`12bed2a8e581fd0f` entered the ISR with status and signals both `00000002`.
+It passed all 17 file cycles at 5.11 seconds and initialized Winlogon
+at 14.24 seconds. At 34.48 seconds, `DbgkCreateThread` asserted
+`Thread == PsGetCurrentThread()` and the kernel stopped with `0x1e`.
+That assertion also occurred with all SD signals disabled. The isolated
+run confirms delivery of the transfer interrupt and exposes a separate
+SMP thread-identification failure during startup. The phone's stable
+signal policy continues to allow only command completion.
