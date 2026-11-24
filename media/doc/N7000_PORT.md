@@ -1549,3 +1549,11 @@ The eight migration cases pass. Kernel `eaa363de3c40e6db` reached SMSS
 in QEMU SMDKC210 SMP in 10.69 seconds. With command-completion IRQs on
 the GT-N7000, all 17 file cycles passed at 5.24 seconds, Winlogon started
 at 14.32 seconds, and both processors responded at 121.86 seconds.
+
+Retesting both completion signals after the clock and current-thread
+changes passed the SMDKC210 SMP session test in 10.38 seconds. On the
+GT-N7000, SD bus build `47c68d8d5bda2b6b` passed 17 file cycles at
+5.12 seconds and reached SMSS. Its last entry was `NtProcessStartup`
+at 7.90 seconds. The watchdog reset the phone before Winlogon and the
+sustained SMP check, with no recorded bugcheck. The command-only
+policy is kept for normal boot.
