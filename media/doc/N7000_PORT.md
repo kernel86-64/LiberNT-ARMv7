@@ -1510,3 +1510,12 @@ restore the incoming mask. With command completion enabled, HAL
 `73319da7fcf53454` reached SMSS in QEMU SMDKC210 SMP in 10.18 seconds.
 On the GT-N7000 it passed all 17 file cycles, initialized Winlogon at 14.38
 seconds and passed the two-core IPI check at 121.73 seconds.
+
+Adding `SDHCI_INT_XFER_COMPLETE` to the command signal mask passed the
+SMDKC210 storage and SMSS checks after resuming the firmware stage. On the
+GT-N7000, SD bus build `c6a36d05fb3a2c4b` passed all 17 file cycles at
+5.17 seconds and initialized Winlogon at 14.28 seconds. The log stopped
+at 15.99 seconds. The watchdog reset the phone before the sustained SMP
+check, with no recorded bugcheck. The transfer-completion signal was
+removed. The preceding run used the same kernel and HAL and passed with
+the command-completion signal alone.
