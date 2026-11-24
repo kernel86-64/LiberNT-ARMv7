@@ -149,7 +149,6 @@ VOID NTAPI HalInitializeProcessor(ULONG ProcessorNumber, PLOADER_PARAMETER_BLOCK
         }
         for (Index = 0; Index < HalpInterruptCount; Index += 4)
             HalpWrite(ARM_VIRT_GIC_DIST_VIRTUAL, 0x400 + Index, 0xA0A0A0A0);
-        HalpWrite(ARM_VIRT_GIC_DIST_VIRTUAL, 0x400, 0xA010E0D0);
     }
     HalpArmInitializeProcessor(ProcessorNumber);
     HalpSetIrql(KeGetCurrentIrql());
@@ -229,7 +228,7 @@ VOID FASTCALL HalClearSoftwareInterrupt(KIRQL Irql)
         Sgi = 0;
     else if (Irql == APC_LEVEL)
         Sgi = 1;
-    else if (Irql == 5)
+    else if (Irql == CLOCK_LEVEL)
         Sgi = 3;
     else
         return;
@@ -262,7 +261,7 @@ KIRQL NTAPI HalpArmGetInterruptIrql(ULONG Source)
     if (Source == 2)
         return IPI_LEVEL;
     if (Source == 3)
-        return 5;
+        return CLOCK_LEVEL;
     return Source == HalpClockVector() ? CLOCK_LEVEL : 5;
 }
 

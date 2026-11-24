@@ -229,7 +229,7 @@ HalpArmInitializeProcessor(
     HalpArmApplyErrata();
     HalpArmWrite(Base, 0x000, 0);
     HalpArmWrite(Base, 0x008, 0);
-    HalpArmWrite(Distributor, 0x400, 0xA010E0D0);
+    HalpArmWrite(Distributor, 0x400, ((15UL - CLOCK_LEVEL) << 28) | 0x0010E0D0);
     HalpArmWrite(Distributor, 0x100, 0xF);
     HalpArmWrite(Base, 0x004, 0xFF);
     HalpArmWrite(Base, 0x000, 1);

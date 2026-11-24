@@ -109,9 +109,15 @@ def check(build, exynos, cpu):
 
     dist = 0xfff10000 + (cpu * 4096 if exynos else 0)
     interface = 0xfff20000 + (cpu * 4096 if exynos else 0)
+    call('HalpClockVector', 0)
+    call('HalpArmGetInterruptIrql', machine.reg_read(UC_ARM_REG_R0))
+    clock_irql = machine.reg_read(UC_ARM_REG_R0)
+    call('HalpArmGetInterruptIrql', 3)
+    assert machine.reg_read(UC_ARM_REG_R0) == clock_irql, 'Clock SGI uses a different IRQL than the hardware clock'
     call('HalpArmInitializeProcessor', cpu)
     assert diagnostic == (0x410810 if exynos else 0x10000)
-    assert (dist + 0x400, 0xa010e0d0) in writes, f'CPU{cpu} SGI priorities written to {writes}'
+    priorities = ((15 - clock_irql) << 28) | 0x0010e0d0
+    assert (dist + 0x400, priorities) in writes, f'CPU{cpu} SGI priorities written to {writes}'
     assert (dist + 0x100, 15) in writes
     assert (interface + 4, 255) in writes
     call('HalpArmSendSgi', 3, 2)
@@ -120,7 +126,7 @@ def check(build, exynos, cpu):
     assert actlr == [0x41 if exynos else 0x40], f'CPU{cpu} cache/TLB broadcast state: {actlr}'
     for version in [1, 2]:
         machine.mem_write(dist + 0xfe8, struct.pack('<I', version << 4))
-        for irql, sgi in [(1, 1), (2, 0), (5, 3)]:
+        for irql, sgi in [(1, 1), (2, 0), (clock_irql, 3)]:
             call('HalClearSoftwareInterrupt', irql)
             expected = [] if version == 1 else [(dist + 0xf10, 255 << (sgi * 8))]
             assert writes == expected, f'CPU{cpu} GICv{version} SGI{sgi} clear: {writes}, expected {expected}'

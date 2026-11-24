@@ -1529,3 +1529,13 @@ That assertion also occurred with all SD signals disabled. The isolated
 run confirms delivery of the transfer interrupt and exposes a separate
 SMP thread-identification failure during startup. The phone's stable
 signal policy continues to allow only command completion.
+
+The secondary CPU used IRQL 5 for its runtime clock SGI. A GIC priority
+mask at a peripheral's IRQL could block those ticks even though it would
+admit the hardware clock. The HAL now assigns the runtime SGI the same
+IRQL and GIC priority as the hardware clock and clears the matching SGI
+on GICv2. HAL build `ccaf640e441f8b3a` passed SMDKC210 storage and SMSS
+with both CPUs after resuming the firmware stage. On the GT-N7000, with
+only command-completion signaling, all 17 file cycles passed at 5.26
+seconds, Winlogon initialized at 14.51 seconds, and both CPUs answered the
+IPI at 121.72 seconds.
