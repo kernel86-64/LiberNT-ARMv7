@@ -65,9 +65,8 @@ static ULONG
 SdBusExynosInterruptSignalEnable(PFDO_EXTENSION FdoExtension, ULONG Enable)
 {
     UNREFERENCED_PARAMETER(FdoExtension);
-    UNREFERENCED_PARAMETER(Enable);
-    /* FIXME: Keep Exynos SD interrupt signaling disabled while the SMP boot stall is investigated. */
-    return 0;
+    /* FIXME: Keep the other Exynos SD events polled until the SMP stall is resolved. */
+    return Enable & SDHCI_INT_CMD_COMPLETE;
 }
 
 static const SDBUS_HARDWARE_OPS SdBusExynosOps =

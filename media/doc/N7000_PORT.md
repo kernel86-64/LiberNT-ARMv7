@@ -1480,3 +1480,24 @@ SD interrupt signaling remains disabled in this baseline. The successful
 121.75-second run is recorded above, but subsequent runs demonstrate that
 other SMP failures remain. A PCR/current-thread migration correction is
 being developed separately and is not included in this milestone.
+
+With all SD interrupts enabled, reading back the SDHCI status after
+acknowledging it in the ISR and synchronized polling paths did not prevent
+the stall. On the GT-N7000, SD bus build `64b050f0596f5f9d` enumerated the
+card and reached the first file cycle at 1.96 seconds before stopping.
+The register readback experiment was reverted.
+
+Enabling only `SDHCI_INT_CMD_COMPLETE` left PIO readiness, transfer completion,
+errors, and card detection on the existing fallback paths. On the GT-N7000,
+the diagnostic SD bus build `bb877aceeb73375b` entered the ISR with status
+and signal mask both equal to `00000001`. It passed all 17 file cycles
+at 5.18 seconds, initialized Winlogon at 14.32 seconds, and passed the SMP
+check with CPU mask `3` at 121.85 seconds. The maintainer observed the desktop.
+The watchdog reset the phone for log recovery. The Exynos signal policy
+allows the command completion bit and preserves existing masks on other
+hardware backends.
+
+The clean driver `e400a1b803331b99` passed all 17 file cycles at 5.21 seconds,
+initialized Winlogon at 14.42 seconds, and passed the two-core IPI check at
+125.49 seconds. The QEMU SMDKC210 test reached SMSS and passed the storage
+test after continuing from a pre-kernel firmware read stall.

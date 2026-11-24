@@ -204,7 +204,7 @@ def check_signals(build, load_image, fields):
                 for register, argument in zip((UC_ARM_REG_R0, UC_ARM_REG_R1, UC_ARM_REG_R2), (fdo, offset, value)):
                     machine.reg_write(register, argument)
                 machine.emu_start(symbols['SdBusWriteReg32'] | 1, 0x2101000, timeout=1000000, count=10000)
-                expected = 0 if backend == 'exynos' and offset == 0x38 else value
+                expected = value & 1 if backend == 'exynos' and offset == 0x38 else value
                 assert writes == [(registers + offset, expected)], f'{backend}: offset={offset:#x}, value={value:#x}, writes={writes}'
 
 
