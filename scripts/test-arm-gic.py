@@ -54,6 +54,8 @@ def check(build, exynos, cpu):
     actlr = []
     diagnostic = 0x10000
     migrate = False
+    migrate_after_pcr_read = False
+    foreign_irql = 5
     migrated = False
 
     def instruction(instance, pc, size, _):
@@ -68,6 +70,9 @@ def check(build, exynos, cpu):
             first, second = struct.unpack('<HH', instance.mem_read(pc, size))
             if first == 0xee1d and second & 0xfff == 0xf90:
                 instance.reg_write(UC_ARM_REG_R0 + (second >> 12), 0x404000 if migrated else 0x400000)
+                if migrate_after_pcr_read and not migrated and not instance.reg_read(UC_ARM_REG_CPSR) & 0x80:
+                    instance.mem_write(0x400000 + 0x1c, bytes([foreign_irql]))
+                    migrated = True
                 instance.reg_write(UC_ARM_REG_PC, (pc + size) | 1)
             elif first == 0xee10 and second & 0xfff == 0xf10:
                 instance.reg_write(UC_ARM_REG_R0 + (second >> 12), 0x412fc091 if exynos else 0x412fc0f0)
@@ -185,6 +190,27 @@ def check(build, exynos, cpu):
     expected_interface = 0xfff20000 + ((1 - cpu) * 4096 if exynos else 0)
     assert migrated, 'migration injection did not reach CPSID'
     assert writes == [(expected_interface + 4, 0xd0)], f'IRQL write after CPU migration: {writes}'
+
+    migrate = False
+    migrated = False
+    migrate_after_pcr_read = True
+    machine.mem_write(0x400000 + 0x1c, bytes(1))
+    machine.mem_write(0x404000 + 0x1c, bytes(1))
+    call('KfRaiseIrql', 2)
+    old_irql = machine.reg_read(UC_ARM_REG_R0)
+    assert old_irql == 0, f'IRQL raise read the previous CPU after migration: {old_irql}'
+    assert writes == [(interface + 4, 0xd0)], f'IRQL raise did not program the local priority mask: {writes}'
+    assert not machine.reg_read(UC_ARM_REG_CPSR) & 0x80, 'IRQL raise left IRQs masked'
+
+    foreign_irql = 0
+    machine.mem_write(0x400000 + 0x1c, bytes([1]))
+    machine.mem_write(0x404000 + 0x1c, bytes([1]))
+    call('KfLowerIrql', 1)
+    assert writes == [(interface + 4, 0xe0)], f'IRQL lower did not program the local priority mask: {writes}'
+    assert not machine.reg_read(UC_ARM_REG_CPSR) & 0x80, 'IRQL lower left IRQs masked'
+    machine.reg_write(UC_ARM_REG_CPSR, machine.reg_read(UC_ARM_REG_CPSR) | 0x80)
+    call('KfLowerIrql', 0)
+    assert machine.reg_read(UC_ARM_REG_CPSR) & 0x80, 'IRQL lower unmasked an IRQ-disabled caller'
 
 
 def check_ipi(build):

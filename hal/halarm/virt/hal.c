@@ -97,35 +97,38 @@ KIRQL NTAPI KeGetCurrentIrql(VOID)
 
 static VOID HalpSetIrql(KIRQL Irql)
 {
-    ULONG Cpsr;
-    ULONG Cpu;
+    ULONG Cpu = KeGetCurrentProcessorNumber();
 
-    __asm__ __volatile__("mrs %0, cpsr\n\tcpsid i" : "=r" (Cpsr) :: "memory");
-    Cpu = KeGetCurrentProcessorNumber();
     HalpWrite(HalpArmGicCpuBase(Cpu), 4, Irql == 0 ? 0xFF : ((15 - Irql) << 4));
     KeGetPcr()->CurrentIrql = Irql;
     __asm__ __volatile__("isb" ::: "memory");
+}
+
+static KIRQL HalpChangeIrql(KIRQL NewIrql, BOOLEAN Raising)
+{
+    ULONG Cpsr;
+    KIRQL OldIrql;
+
+    __asm__ __volatile__("mrs %0, cpsr\n\tcpsid i" : "=r" (Cpsr) :: "memory");
+    OldIrql = KeGetCurrentIrql();
+    if (Raising && NewIrql > HIGH_LEVEL)
+        KeBugCheckEx(IRQL_NOT_GREATER_OR_EQUAL, NewIrql, OldIrql, 0, 0);
+    if (!Raising && NewIrql > OldIrql)
+        KeBugCheckEx(IRQL_NOT_LESS_OR_EQUAL, OldIrql, NewIrql, 0, 0);
+    if (!Raising || NewIrql > OldIrql)
+        HalpSetIrql(NewIrql);
     __asm__ __volatile__("msr cpsr_c, %0" :: "r" (Cpsr) : "memory");
+    return OldIrql;
 }
 
 KIRQL FASTCALL KfRaiseIrql(KIRQL NewIrql)
 {
-    KIRQL OldIrql = KeGetCurrentIrql();
-
-    if (NewIrql > HIGH_LEVEL)
-        KeBugCheckEx(IRQL_NOT_GREATER_OR_EQUAL, NewIrql, OldIrql, 0, 0);
-    if (NewIrql <= OldIrql)
-        return OldIrql;
-    HalpSetIrql(NewIrql);
-    return OldIrql;
+    return HalpChangeIrql(NewIrql, TRUE);
 }
 
 VOID FASTCALL KfLowerIrql(KIRQL NewIrql)
 {
-    KIRQL OldIrql = KeGetCurrentIrql();
-    if (NewIrql > OldIrql)
-        KeBugCheckEx(IRQL_NOT_LESS_OR_EQUAL, OldIrql, NewIrql, 0, 0);
-    HalpSetIrql(NewIrql);
+    HalpChangeIrql(NewIrql, FALSE);
 }
 
 KIRQL NTAPI KeRaiseIrqlToDpcLevel(VOID) { return KfRaiseIrql(DISPATCH_LEVEL); }

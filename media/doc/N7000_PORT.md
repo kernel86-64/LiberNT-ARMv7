@@ -1501,3 +1501,12 @@ The clean driver `e400a1b803331b99` passed all 17 file cycles at 5.21 seconds,
 initialized Winlogon at 14.42 seconds, and passed the two-core IPI check at
 125.49 seconds. The QEMU SMDKC210 test reached SMSS and passed the storage
 test after continuing from a pre-kernel firmware read stall.
+
+The ARM HAL regression also reproduced a migration between reading TPIDRPRW
+and loading the old IRQL. The former CPU had reached IRQL 5, so the old HAL
+returned 5 for a raise from 0 to 2 and skipped the GIC priority update.
+Both raise and lower now mask local IRQs across the read and update and
+restore the incoming mask. With command completion enabled, HAL
+`73319da7fcf53454` reached SMSS in QEMU SMDKC210 SMP in 10.18 seconds.
+On the GT-N7000 it passed all 17 file cycles, initialized Winlogon at 14.38
+seconds and passed the two-core IPI check at 121.73 seconds.
