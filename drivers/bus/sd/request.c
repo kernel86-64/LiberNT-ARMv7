@@ -263,11 +263,20 @@ SdBusWaitForInterrupt(
 
             WaitMs = (RemainingMs > 10) ? 10 : RemainingMs;
             Timeout.QuadPart = -(LONGLONG)WaitMs * 10000; /* ms -> 100ns */
-            Status = KeWaitForSingleObject(&FdoExtension->CommandEvent,
-                                           Executive,
-                                           KernelMode,
-                                           FALSE,
-                                           &Timeout);
+            InterlockedExchange(&FdoExtension->CommandWaitMask, (LONG)MatchMask);
+            if ((ULONG)InterlockedCompareExchange(&FdoExtension->CommandInterruptStatus, 0, 0) & MatchMask)
+            {
+                Status = STATUS_SUCCESS;
+            }
+            else
+            {
+                Status = KeWaitForSingleObject(&FdoExtension->CommandEvent,
+                                               Executive,
+                                               KernelMode,
+                                               FALSE,
+                                               &Timeout);
+            }
+            InterlockedExchange(&FdoExtension->CommandWaitMask, 0);
             if (Status == STATUS_TIMEOUT)
             {
                 RemainingMs -= WaitMs;

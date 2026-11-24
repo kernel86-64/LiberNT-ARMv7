@@ -99,6 +99,7 @@ typedef struct _FDO_EXTENSION {
     KDPC CommandDpc;                            /* DPC to signal CommandEvent from ISR */
     KEVENT CommandEvent;                        /* SynchronizationEvent, auto-reset */
     volatile LONG CommandInterruptStatus;       /* ISR accumulates cmd/data bits here */
+    volatile LONG CommandWaitMask;
 
     /* Synchronization */
     KSPIN_LOCK Lock;

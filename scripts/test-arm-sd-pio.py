@@ -83,6 +83,9 @@ def check(build, load_image, offsets, read, scenario, interrupt, entry='SdBusSen
             offset = r0 - registers
             if offset == 0x30:
                 result = status
+                if scenario == 'completion_before_wait' and issued and command_ticks == 100:
+                    put(fdo + f['CommandInterruptStatus'], 1)
+                    command_ticks += 1
             elif offset == 0x24:
                 if issued:
                     polls += 1
@@ -109,7 +112,7 @@ def check(build, load_image, offsets, read, scenario, interrupt, entry='SdBusSen
                     put(fdo + f['CommandInterruptStatus'], get(fdo + f['CommandInterruptStatus']) | pending_isr)
                     pending_isr = 0
                 issued = True
-                status = 0 if scenario == 'command_race' else 1 | (ready if scenario == 'coalesced' else 0)
+                status = 0 if scenario in ('command_race', 'completion_before_wait') else 1 | (ready if scenario == 'coalesced' else 0)
             elif offset == 0x20:
                 assert issued and scenario not in ('timeout', 'error') and (scenario != 'stale' or polls >= 4), 'PIO write before Buffer Write Enable'
                 written.extend(r1.to_bytes(4, 'little'))
@@ -134,6 +137,8 @@ def check(build, load_image, offsets, read, scenario, interrupt, entry='SdBusSen
             instance.reg_write(UC_ARM_REG_PC, r1)
             return
         elif name == 'KeStallExecutionProcessor':
+            if issued and scenario == 'completion_before_wait':
+                command_ticks += 1
             if issued and scenario == 'command_race':
                 command_ticks += 1
                 if command_ticks == 4:
@@ -175,6 +180,55 @@ def check(build, load_image, offsets, read, scenario, interrupt, entry='SdBusSen
         assert result == 0 and transferred == length, f'{scenario}: status={result:#x}, bytes={transferred}, waits={waits}'
         actual = bytes(machine.mem_read(buffer, length)) if read else bytes(written)
         assert actual == payload, 'PIO data contents differ'
+    if scenario == 'completion_before_wait':
+        assert command_ticks == 101 and waits == 0, f'completion before wait was missed: waits={waits}'
+
+
+def check_completion_dpc(build, load_image, fields, common):
+    for waiting, status, should_queue in ((0, 2, False), (1, 2, False),
+                                           (2, 2, True), (2, 3, True)):
+        machine, symbols = load_image(build, 'drivers/bus/sd/sdbus.sys', 'symbols/sdbus.sys')
+        for base in (0x2000000, 0x2100000, 0x2200000):
+            machine.mem_map(base, 0x10000)
+        fdo, registers = 0x2200000, 0x2208000
+        machine.mem_write(fdo + fields['RegisterBase'], struct.pack('<I', registers))
+        machine.mem_write(fdo + common['DeviceState'], struct.pack('<I', 1))
+        if 'CommandWaitMask' in fields:
+            machine.mem_write(fdo + fields['CommandWaitMask'], struct.pack('<I', waiting))
+        hooks = {}
+        for index, name in enumerate(('READ_REGISTER_ULONG', 'WRITE_REGISTER_ULONG', 'KeInsertQueueDpc')):
+            address = 0x2100000 + index * 16
+            machine.mem_write(symbols['__imp_' + name], struct.pack('<I', address | 1))
+            hooks[address] = name
+        queued, acknowledged = [], []
+
+        def instruction(instance, pc, size, _):
+            if pc not in hooks:
+                return
+            name = hooks[pc]
+            register = instance.reg_read(UC_ARM_REG_R0)
+            result = 0
+            if name == 'READ_REGISTER_ULONG':
+                result = {0x30: status, 0x38: 3}[register - registers]
+            elif name == 'WRITE_REGISTER_ULONG':
+                assert register == registers + 0x30
+                acknowledged.append(instance.reg_read(UC_ARM_REG_R1))
+            else:
+                queued.append(register)
+                result = 1
+            instance.reg_write(UC_ARM_REG_R0, result)
+            instance.reg_write(UC_ARM_REG_PC, instance.reg_read(UC_ARM_REG_LR))
+
+        machine.hook_add(UC_HOOK_CODE, instruction)
+        machine.reg_write(UC_ARM_REG_SP, 0x200f000)
+        machine.reg_write(UC_ARM_REG_LR, 0x2101001)
+        machine.reg_write(UC_ARM_REG_R0, 0)
+        machine.reg_write(UC_ARM_REG_R1, fdo)
+        machine.emu_start(symbols['SdBusInterruptService'] | 1, 0x2101000, timeout=1000000, count=10000)
+        assert machine.reg_read(UC_ARM_REG_R0) == 1 and acknowledged == [status]
+        assert struct.unpack('<I', machine.mem_read(fdo + fields['CommandInterruptStatus'], 4))[0] == status
+        assert queued == ([fdo + fields['CommandDpc']] if should_queue else []), (
+            f'completion DPC for status {status:#x}, wait mask {waiting:#x}: {queued}')
 
 
 def check_signals(build, load_image, fields):
@@ -204,7 +258,7 @@ def check_signals(build, load_image, fields):
                 for register, argument in zip((UC_ARM_REG_R0, UC_ARM_REG_R1, UC_ARM_REG_R2), (fdo, offset, value)):
                     machine.reg_write(register, argument)
                 machine.emu_start(symbols['SdBusWriteReg32'] | 1, 0x2101000, timeout=1000000, count=10000)
-                expected = value & 1 if backend == 'exynos' and offset == 0x38 else value
+                expected = value & 3 if backend == 'exynos' and offset == 0x38 else value
                 assert writes == [(registers + offset, expected)], f'{backend}: offset={offset:#x}, value={value:#x}, writes={writes}'
 
 
@@ -223,8 +277,11 @@ def main():
                 check(args.build_dir, helper.load_image, offsets, read, scenario, interrupt)
     for read in (True, False):
         check(args.build_dir, helper.load_image, offsets, read, 'command_race', True)
+        check(args.build_dir, helper.load_image, offsets, read, 'completion_before_wait', True)
     for entry in ('SdBusSendCommand', 'SdBusSendDataReadCommand'):
         check(args.build_dir, helper.load_image, offsets, True, 'command_race', True, entry)
+    check_completion_dpc(args.build_dir, helper.load_image, offsets[0],
+                         members(symbols, '_SDBUS_COMMON_EXTENSION'))
     check_signals(args.build_dir, helper.load_image, offsets[0])
     print('ARM SDHCI PIO: PASS (polled/interrupt, read/write, stale/coalesced events, command-reset race, timeout/error, Exynos signal policy)')
 

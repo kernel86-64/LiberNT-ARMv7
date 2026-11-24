@@ -1557,3 +1557,13 @@ GT-N7000, SD bus build `47c68d8d5bda2b6b` passed 17 file cycles at
 at 7.90 seconds. The watchdog reset the phone before Winlogon and the
 sustained SMP check, with no recorded bugcheck. The command-only
 policy is kept for normal boot.
+
+With only transfer-completion signaling, driver `5706b7f530f79bdb` confirmed
+IRQ delivery without queuing completion DPCs and passed the two-core check
+at 121.73 seconds. The matching run with normal DPCs (`fdc593d03f282fd8`)
+stopped after Winlogon at 14.33 seconds. The new driver queues a DPC only
+when its completion matches the worker's armed wait mask, and rechecks
+pending status after arming. With both completion signals enabled, driver
+`43c2922506c7b2ee` passed all 17 file cycles at 5.15 seconds, initialized
+Winlogon at 14.42 seconds, and passed the two-core check at 121.76 seconds.
+FIFO readiness, error, and card-detect signaling remain masked on Exynos.

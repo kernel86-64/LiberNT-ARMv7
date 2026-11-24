@@ -89,7 +89,8 @@ SdBusInterruptService(
     {
         SdBusWriteReg32(FdoExtension, SDHCI_INT_STATUS, CmdDataBits);
         InterlockedOr(&FdoExtension->CommandInterruptStatus, (LONG)CmdDataBits);
-        KeInsertQueueDpc(&FdoExtension->CommandDpc, NULL, NULL);
+        if (CmdDataBits & (ULONG)InterlockedCompareExchange(&FdoExtension->CommandWaitMask, 0, 0))
+            KeInsertQueueDpc(&FdoExtension->CommandDpc, NULL, NULL);
     }
 
     if (DmaBit)

@@ -66,7 +66,7 @@ SdBusExynosInterruptSignalEnable(PFDO_EXTENSION FdoExtension, ULONG Enable)
 {
     UNREFERENCED_PARAMETER(FdoExtension);
     /* FIXME: Keep the other Exynos SD events polled until the SMP stall is resolved. */
-    return Enable & SDHCI_INT_CMD_COMPLETE;
+    return Enable & (SDHCI_INT_CMD_COMPLETE | SDHCI_INT_XFER_COMPLETE);
 }
 
 static const SDBUS_HARDWARE_OPS SdBusExynosOps =
