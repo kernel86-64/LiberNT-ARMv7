@@ -497,6 +497,52 @@ def check_ap_boot_alignment(build):
 
 
 
+def check_current_thread_migration(build):
+    targets = [('KeGetCurrentThread', 0x2300000), ('ExGetPreviousMode', 1)]
+    offsets = (build / 'sdk/include/asm/ksarm.h').read_text()
+    offset = lambda name: int(re.search(r'^' + name + r' = (0x[0-9a-f]+)$', offsets, re.M)[1], 16)
+    for entry, expected in targets:
+        for masked, stage in ((False, 'entry'), (False, 'after_read'),
+                              (True, 'entry'), (True, 'after_read')):
+            machine, symbols = load_image(build, 'ntoskrnl/ntoskrnl.exe', 'symbols/ntoskrnl.exe')
+            for address in (0x2000000, 0x2100000, 0x2200000, 0x2300000):
+                machine.mem_map(address, 0x10000)
+            pcr = 0x2200000
+            thread, foreign = 0x2300000, 0x2301000
+            for base in (pcr, pcr + 0x5000):
+                machine.mem_write(base + offset('PcCurrentPrcb'), struct.pack('<I', base + offset('PcPrcb')))
+                machine.mem_write(base + offset('PcCurrentThread'), struct.pack('<I', thread))
+            machine.mem_write(thread + offset('ThPreviousMode'), bytes([1]))
+            reads = []
+
+            def migrate(instance):
+                nonlocal pcr
+                instance.mem_write(pcr + offset('PcCurrentThread'), struct.pack('<I', foreign))
+                pcr = 0x2205000
+
+            def instruction(instance, pc, size, _):
+                if pc == symbols[entry] and stage == 'entry' and not instance.reg_read(UC_ARM_REG_CPSR) & 0x80:
+                    migrate(instance)
+                if size == 4:
+                    first, second = struct.unpack('<HH', instance.mem_read(pc, size))
+                    if first == 0xee1d and second & 0xfff == 0xf90:
+                        instance.reg_write(UC_ARM_REG_R0 + (second >> 12), pcr)
+                        reads.append(pc)
+                        if stage == 'after_read' and not instance.reg_read(UC_ARM_REG_CPSR) & 0x80:
+                            migrate(instance)
+                        instance.reg_write(UC_ARM_REG_PC, (pc + size) | 1)
+
+            machine.hook_add(UC_HOOK_CODE, instruction)
+            machine.reg_write(UC_ARM_REG_CPSR, 0x93 if masked else 0x13)
+            machine.reg_write(UC_ARM_REG_SP, 0x200f000)
+            machine.reg_write(UC_ARM_REG_LR, 0x2100001)
+            machine.emu_start(symbols[entry] | 1, 0x2100000, timeout=1000000, count=100000)
+            assert reads, f'{entry} did not read the PCR'
+            result = machine.reg_read(UC_ARM_REG_R0)
+            assert result == expected, f'{entry} followed a stale PCR after migration: {result:#x}, expected {expected:#x}'
+            assert bool(machine.reg_read(UC_ARM_REG_CPSR) & 0x80) == masked, f'{entry} changed the IRQ mask'
+
+
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--build-dir', type=Path, default=Path('output-Clang-arm-debug'))
@@ -509,7 +555,8 @@ def main():
     check_dispatch(args.build_dir)
     check_ap_process_mask(args.build_dir)
     check_ap_boot_alignment(args.build_dir)
-    print('ARM SMP primitives: PASS (A9 errata revisions/readback, synch IRQL, SGI banks/clear, IPI masks, locks, AP init/alignment, unclaimed IRQ, dispatch races, IRQL migration, nested IRQ EOI)')
+    check_current_thread_migration(args.build_dir)
+    print('ARM SMP primitives: PASS (A9 errata revisions/readback, synch IRQL, SGI banks/clear, IPI masks, locks, AP init/alignment, unclaimed IRQ, dispatch races, IRQL/thread migration, nested IRQ EOI)')
 
 
 if __name__ == '__main__':

@@ -1539,3 +1539,13 @@ with both CPUs after resuming the firmware stage. On the GT-N7000, with
 only command-completion signaling, all 17 file cycles passed at 5.26
 seconds, Winlogon initialized at 14.51 seconds, and both CPUs answered the
 IPI at 121.72 seconds.
+
+An ARM binary test migrates the executing thread immediately after the
+PCR read and runs a different thread on the old CPU. The previous
+current-thread getter returns the other thread. The getter now masks
+local IRQs across the PCR and CurrentThread reads, restores the prior
+CPSR control bits, and supplies PreviousMode from that same thread.
+The eight migration cases pass. Kernel `eaa363de3c40e6db` reached SMSS
+in QEMU SMDKC210 SMP in 10.69 seconds. With command-completion IRQs on
+the GT-N7000, all 17 file cycles passed at 5.24 seconds, Winlogon started
+at 14.32 seconds, and both processors responded at 121.86 seconds.

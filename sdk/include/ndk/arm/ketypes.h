@@ -1111,9 +1111,24 @@ KeGetCurrentPrcb(VOID)
 //
 // Just read it from the PCR
 //
+FORCEINLINE
+PKTHREAD
+_KeGetCurrentThread(VOID)
+{
+    ULONG Saved;
+    PKTHREAD Thread;
+
+    __asm__ __volatile__("mrs %0, cpsr\n\tcpsid i\n\t"
+                         "mrc p15, 0, %1, c13, c0, 4\n\t"
+                         "bfc %1, #0, #12\n\t"
+                         "ldr %1, [%1, #%c2]\n\tmsr cpsr_c, %0"
+                         : "=&r"(Saved), "=&r"(Thread)
+                         : "i"(FIELD_OFFSET(KIPCR, Prcb.CurrentThread)) : "memory");
+    return Thread;
+}
+
 #define KeGetCurrentIrql()             KeGetPcr()->CurrentIrql
-#define _KeGetCurrentThread()          KeGetCurrentPrcb()->CurrentThread
-#define _KeGetPreviousMode()           KeGetCurrentPrcb()->CurrentThread->PreviousMode
+#define _KeGetPreviousMode()           _KeGetCurrentThread()->PreviousMode
 #define _KeIsExecutingDpc()            (KeGetCurrentPrcb()->DpcRoutineActive != 0)
 #define KeGetCurrentThread()           _KeGetCurrentThread()
 #define KeGetPreviousMode()            _KeGetPreviousMode()
