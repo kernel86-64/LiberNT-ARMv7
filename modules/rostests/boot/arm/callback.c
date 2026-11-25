@@ -9,11 +9,22 @@
 
 static DECLSPEC_ALIGN(8) UCHAR CallbackUserStack[8192];
 static ULONG CallbackFailures, CallbackCalls;
+static TEB CallbackTeb;
+static ULONG CallbackBatchFlushes;
 PVOID ArmGrowStackPointer;
 ULONG ArmGrowStackCalls;
 NTSTATUS ArmGrowStackStatus;
 PVOID KeUserCallbackDispatcher = (PVOID)1;
 PVOID KeUserExceptionDispatcher = (PVOID)3;
+
+static NTSTATUS NTAPI ArmCallbackFlushBatch(VOID)
+{
+    if (CallbackTeb.GdiBatchCount != 1)
+        ++CallbackFailures;
+    CallbackTeb.GdiBatchCount = 0;
+    ++CallbackBatchFlushes;
+    return STATUS_SUCCESS;
+}
 
 static VOID NTAPI ArmCallbackProbe(PVOID Address, SIZE_T Length, ULONG Alignment)
 {
@@ -70,7 +81,7 @@ static DECLSPEC_NORETURN VOID ArmCallbackExit(PKTRAP_FRAME Trap, PKEXCEPTION_FRA
         Status = KeUserModeCallback(8, &Argument, sizeof(Argument), &Result, &Length);
         if (Status != STATUS_ACCESS_DENIED || Result != (PVOID)0x1234 || Length != 9 ||
             Thread->TrapFrame != Trap || Thread->InitialStack != (PVOID)Initial ||
-            Thread->CallbackNestingLevel != 1)
+            Thread->CallbackNestingLevel != 1 || CallbackBatchFlushes != 1 || CallbackTeb.GdiBatchCount)
             ++CallbackFailures;
     }
     else if (Frame->ApiNumber == 9)
@@ -79,11 +90,14 @@ static DECLSPEC_NORETURN VOID ArmCallbackExit(PKTRAP_FRAME Trap, PKEXCEPTION_FRA
         Trap->R0 = 42;
         Trap->VfpState->VfpD[31] = 0xaabbccddeeff0011ULL;
         Exception->R4 = 0x12345678;
+        CallbackTeb.GdiBatchCount = 1;
         NtCallbackReturn((PVOID)0x1234, 9, STATUS_CALLBACK_POP_STACK);
         KeBugCheck(KMODE_EXCEPTION_NOT_HANDLED);
     }
     else if (Frame->ApiNumber != 8 || Thread->CallbackNestingLevel != 2)
         ++CallbackFailures;
+    else
+        CallbackTeb.GdiBatchCount = 1;
     __asm__ __volatile__("vmov.f64 d8, #16.0\n\tvmov.f64 d15, #16.0" ::: "d8", "d15");
     NtCallbackReturn((PVOID)0x1234, 9, STATUS_ACCESS_DENIED);
     KeBugCheck(KMODE_EXCEPTION_NOT_HANDLED);
@@ -95,6 +109,8 @@ BOOLEAN ArmTestCallbacks(PKTHREAD Thread)
     KARM_VFP_STATE LinkedVfp = {0};
     PVOID Initial = Thread->InitialStack, PrcbBase = KeGetCurrentPrcb()->SpBase;
     PKTRAP_FRAME OldTrap = Thread->TrapFrame;
+    PTEB OldTeb = Thread->Teb;
+    PGDI_BATCHFLUSH_ROUTINE OldFlush = KeGdiFlushUserBatch;
     ULONG_PTR Limit = Thread->StackLimit;
     PVOID Result;
     ULONG Length, Cpsr, After, Low, High;
@@ -114,7 +130,9 @@ BOOLEAN ArmTestCallbacks(PKTHREAD Thread)
     Thread->TrapFrame = &Original.Trap;
     Thread->StackLimit = 0;
     Thread->PreviousMode = UserMode;
-    CallbackCalls = CallbackFailures = 0;
+    Thread->Teb = &CallbackTeb;
+    KeGdiFlushUserBatch = ArmCallbackFlushBatch;
+    CallbackCalls = CallbackFailures = CallbackBatchFlushes = CallbackTeb.GdiBatchCount = 0;
     Passed = NtCallbackReturn(NULL, 0, 0) == STATUS_NO_CALLBACK_ACTIVE;
     Thread->CallbackNestingLevel = KI_MAX_USER_CALLBACK_NESTING;
     Passed = KeUserModeCallback(7, &Argument, sizeof(Argument), &Result, &Length) ==
@@ -135,6 +153,7 @@ BOOLEAN ArmTestCallbacks(PKTHREAD Thread)
              Original.Trap.Sp == (ULONG_PTR)(CallbackUserStack + sizeof(CallbackUserStack));
     Status = KeUserModeCallback(9, &Argument, sizeof(Argument), &Result, &Length);
     Passed = Passed && Status == STATUS_CALLBACK_POP_STACK && CallbackCalls == 3 && !CallbackFailures &&
+             CallbackBatchFlushes == 2 && !CallbackTeb.GdiBatchCount &&
              Original.Trap.Sp == (ULONG_PTR)(CallbackUserStack + sizeof(CallbackUserStack) - 128) &&
              Original.Trap.R0 == 42 && Original.Exception.R4 == 0x12345678 &&
              Original.Trap.VfpState == &Original.Vfp && Original.Vfp.Link == &LinkedVfp &&
@@ -157,6 +176,8 @@ BOOLEAN ArmTestCallbacks(PKTHREAD Thread)
              UserRecord->NumberParameters == 2 && UserRecord->ExceptionInformation[1] == 0x1234;
     Thread->TrapFrame = OldTrap;
     Thread->StackLimit = Limit;
+    Thread->Teb = OldTeb;
+    KeGdiFlushUserBatch = OldFlush;
     KeGetCurrentPrcb()->SpBase = PrcbBase;
     return Passed;
 }

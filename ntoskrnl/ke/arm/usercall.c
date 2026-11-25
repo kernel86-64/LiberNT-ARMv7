@@ -87,6 +87,7 @@ KeUserModeCallback(ULONG RoutineIndex, PVOID Argument, ULONG ArgumentLength,
     PKTRAP_FRAME Trap = Thread->TrapFrame;
     PUCALLOUT_FRAME Frame;
     ULONG_PTR OldStack, Stack, Page;
+    ULONG BatchCount = 0;
     NTSTATUS Status;
 
     ASSERT(KeGetPreviousMode() == UserMode);
@@ -123,6 +124,19 @@ KeUserModeCallback(ULONG RoutineIndex, PVOID Argument, ULONG ArgumentLength,
     ++Thread->CallbackNestingLevel;
     Status = KiCallUserMode(Result, ResultLength);
     --Thread->CallbackNestingLevel;
+    if (Thread->Teb && KeGdiFlushUserBatch)
+    {
+        _SEH2_TRY
+        {
+            BatchCount = Thread->Teb->GdiBatchCount;
+        }
+        _SEH2_EXCEPT(EXCEPTION_EXECUTE_HANDLER)
+        {
+            BatchCount = 0;
+        }
+        _SEH2_END;
+        if (BatchCount) KeGdiFlushUserBatch();
+    }
     if (Status != STATUS_CALLBACK_POP_STACK) Trap->Sp = OldStack;
     return Status;
 }
