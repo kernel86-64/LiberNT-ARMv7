@@ -367,6 +367,7 @@ if(ARCH STREQUAL "arm" AND CMAKE_C_COMPILER_ID STREQUAL "Clang")
         COMPILE_DEFINITIONS "_NTOSKRNL_;NTKRNLVISTA;NVS;EX_LEGACY_PUSH_LOCKS")
     target_include_directories(arm_uefi_test PRIVATE
         ${REACTOS_SOURCE_DIR}
+        ${REACTOS_SOURCE_DIR}/ntoskrnl
         ${REACTOS_SOURCE_DIR}/sdk/lib/drivers/arblib
         ${REACTOS_BINARY_DIR}/ntoskrnl/include
         ${REACTOS_BINARY_DIR}/ntoskrnl/include/internal

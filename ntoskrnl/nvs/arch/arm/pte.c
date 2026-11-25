@@ -28,12 +28,6 @@
 #define A32_SW_COPY        (1ULL << 56)
 #define A32_FRAME_MASK     0x000000FFFFFFF000ULL
 
-ULONG
-MiArmShortTtbr(ULONG Root)
-{
-    return Root | (1UL << 6) | (1UL << 5) | (1UL << 3) | (1UL << 1);
-}
-
 MI_PTE
 MiArchPteMakeLeaf(
     _In_ ULONG64 Frame,
